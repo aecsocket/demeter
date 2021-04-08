@@ -10,6 +10,8 @@ import org.bukkit.World;
 import org.bukkit.event.block.BlockGrowEvent;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 public class WorldData implements Tickable {
@@ -25,7 +27,7 @@ public class WorldData implements Tickable {
 
     private final Calendar calendar;
     private final Temperature temperature;
-    private final Feature[] features = new Feature[2];
+    private final List<Feature> features = new ArrayList<>();
 
     public WorldData(NaturaPlugin plugin, World world, Settings settings) {
         this.plugin = plugin;
@@ -33,8 +35,8 @@ public class WorldData implements Tickable {
         this.settings = settings;
         calendar = new Calendar(this, settings.calendar, new Calendar.State() /* todo */);
         temperature = new Temperature(this, settings.temperature);
-        features[0] = calendar;
-        features[1] = temperature;
+        features.add(calendar);
+        features.add(temperature);
     }
 
     public NaturaPlugin plugin() { return plugin; }
