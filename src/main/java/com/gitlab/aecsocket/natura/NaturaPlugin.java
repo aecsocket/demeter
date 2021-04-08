@@ -2,6 +2,12 @@ package com.gitlab.aecsocket.natura;
 
 import co.aikar.commands.InvalidCommandArgument;
 import co.aikar.commands.PaperCommandManager;
+import com.comphenix.protocol.PacketType;
+import com.comphenix.protocol.ProtocolLib;
+import com.comphenix.protocol.ProtocolLibrary;
+import com.comphenix.protocol.ProtocolManager;
+import com.comphenix.protocol.events.PacketContainer;
+import com.comphenix.protocol.injector.netty.WirePacket;
 import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
 import com.gitlab.aecsocket.unifiedframework.core.loop.Tickable;
 import com.gitlab.aecsocket.unifiedframework.core.registry.Identifiable;
@@ -11,16 +17,18 @@ import com.gitlab.aecsocket.unifiedframework.paper.util.plugin.BasePlugin;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.server.ServerLoadEvent;
+import org.bukkit.WorldCreator;
+import org.bukkit.entity.Player;
 import org.spongepowered.configurate.serialize.SerializationException;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Type;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tickable {
@@ -30,6 +38,8 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
 
     private final Map<World, WorldData> worlds = new HashMap<>();
     private PaperCommandManager commandManager;
+    private ProtocolManager protocol;
+    private World dummyWorld;
 
     @Override
     public void onEnable() {
@@ -46,9 +56,14 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
                 Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList()));
         commandManager.registerCommand(new NaturaCommand(this));
 
+        protocol = ProtocolLibrary.getProtocolManager();
+        protocol.addPacketListener(new NaturaPacketAdapter(this));
+
         Bukkit.getPluginManager().registerEvents(new NaturaListener(this), this);
 
         schedulerLoop.register(this);
+
+        dummyWorld = Bukkit.createWorld(new WorldCreator("dummy"));
     }
 
     @Override
@@ -91,11 +106,39 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
     public PaperCommandManager commandManager() { return commandManager; }
     public Map<World, WorldData> worlds() { return worlds; }
     public WorldData worldData(World world) { return worlds.get(world); }
+    public ProtocolManager protocol() { return protocol; }
+    public World dummyWorld() { return dummyWorld; }
 
     @Override
     public void tick(TickContext tickContext) {
         for (WorldData world : worlds.values()) {
             tickContext.tick(world);
         }
+    }
+
+    public void sendPacket(PacketContainer packet, Player target, boolean wire) {
+        try {
+            if (wire) {
+                WirePacket wirePacket = WirePacket.fromPacket(packet);
+                protocol.sendWirePacket(target, wirePacket);
+            } else
+                protocol.sendServerPacket(target, packet);
+        } catch (InvocationTargetException | RuntimeException e) {
+            log(LogLevel.WARN, e, "Could not send packet to %s (%s)", target.getName(), target.getUniqueId());
+        }
+    }
+
+    public void sendPacket(PacketContainer packet, Player target) {
+        sendPacket(packet, target, false);
+    }
+
+    public void sendPacket(Player target, PacketType type, boolean wire, Consumer<PacketContainer> builder) {
+        PacketContainer packet = new PacketContainer(type);
+        builder.accept(packet);
+        sendPacket(packet, target, wire);
+    }
+
+    public void sendPacket(Player target, PacketType type, Consumer<PacketContainer> builder) {
+        sendPacket(target, type, false, builder);
     }
 }

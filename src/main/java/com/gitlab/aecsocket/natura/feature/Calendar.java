@@ -1,5 +1,7 @@
 package com.gitlab.aecsocket.natura.feature;
 
+import com.comphenix.protocol.events.PacketContainer;
+import com.comphenix.protocol.events.PacketEvent;
 import com.gitlab.aecsocket.natura.WorldData;
 import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
 import org.bukkit.event.block.BlockGrowEvent;
@@ -33,6 +35,7 @@ public class Calendar implements Feature {
         @Required
         public double duration = 1;
         public double fertility = 1;
+        public Integer biome;
 
         @Override
         public String toString() {
@@ -40,6 +43,7 @@ public class Calendar implements Feature {
                     "name='" + name + '\'' +
                     ", duration=" + duration +
                     ", fertility=" + fertility +
+                    ", biome=" + biome +
                     '}';
         }
     }
@@ -64,6 +68,9 @@ public class Calendar implements Feature {
 
     public void updateSeason() {
         season = settings.seasons.get(state.seasonIndex);
+
+        // TODO: refresh client chunks on update
+        // this is super hard to do without tons of hacks
     }
 
     public WorldData world() { return world; }
@@ -78,6 +85,18 @@ public class Calendar implements Feature {
             return;
         if (ThreadLocalRandom.current().nextDouble() > season.fertility)
             event.setCancelled(true);
+    }
+
+    @Override
+    public void mapChunk(PacketEvent event) {
+        if (season.biome == null)
+            return;
+        PacketContainer packet = event.getPacket();
+        int[] biomes = new int[1024];
+        // TODO leave alone the biomes which have special properties like deserts
+        // only replace "grassy" biomes
+        Arrays.fill(biomes, season.biome);
+        packet.getIntegerArrays().write(0, biomes);
     }
 
     @Override

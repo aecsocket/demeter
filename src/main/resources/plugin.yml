@@ -4,4 +4,4 @@ author: "aecsocket"
 version: "${project.version}"
 api-version: "1.16"
 main: "${project.groupId}.${project.artifactId}.NaturaPlugin"
-depend: []
+depend: [ "ProtocolLib" ]

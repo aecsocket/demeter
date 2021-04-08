@@ -1,5 +1,6 @@
 package com.gitlab.aecsocket.natura;
 
+import com.comphenix.protocol.events.PacketEvent;
 import com.gitlab.aecsocket.natura.feature.Calendar;
 import com.gitlab.aecsocket.natura.feature.Feature;
 import com.gitlab.aecsocket.natura.feature.Temperature;
@@ -8,6 +9,8 @@ import com.gitlab.aecsocket.unifiedframework.core.loop.Tickable;
 import org.bukkit.World;
 import org.bukkit.event.block.BlockGrowEvent;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
+
+import java.util.function.Consumer;
 
 public class WorldData implements Tickable {
     @ConfigSerializable
@@ -41,16 +44,22 @@ public class WorldData implements Tickable {
     public Calendar calendar() { return calendar; }
     public Temperature temperature() { return temperature; }
 
-    public void blockGrow(BlockGrowEvent event) {
+    private void run(Consumer<Feature> function) {
         for (Feature feature : features) {
-            feature.blockGrow(event);
+            function.accept(feature);
         }
+    }
+
+    public void blockGrow(BlockGrowEvent event) {
+        run(f -> f.blockGrow(event));
+    }
+
+    public void mapChunk(PacketEvent event) {
+        run(f -> f.mapChunk(event));
     }
 
     @Override
     public void tick(TickContext tickContext) {
-        for (Feature feature : features) {
-            tickContext.tick(feature);
-        }
+        run(tickContext::tick);
     }
 }
