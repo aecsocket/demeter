@@ -4,6 +4,8 @@ import org.bukkit.World;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockGrowEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.function.Consumer;
 
@@ -27,5 +29,10 @@ public class NaturaListener implements Listener {
     @EventHandler
     public void onEvent(BlockGrowEvent event) {
         pass(event.getBlock().getWorld(), data -> data.blockGrow(event));
+    }
+
+    @EventHandler
+    public void onEvent(PlayerItemConsumeEvent event) {
+        pass(event.getPlayer().getWorld(), data -> data.itemConsume(event));
     }
 }

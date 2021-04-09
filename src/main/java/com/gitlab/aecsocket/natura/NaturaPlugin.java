@@ -3,23 +3,30 @@ package com.gitlab.aecsocket.natura;
 import co.aikar.commands.InvalidCommandArgument;
 import co.aikar.commands.PaperCommandManager;
 import com.comphenix.protocol.PacketType;
-import com.comphenix.protocol.ProtocolLib;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.ProtocolManager;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.injector.netty.WirePacket;
+import com.gitlab.aecsocket.natura.feature.GlobalTemperature;
 import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
 import com.gitlab.aecsocket.unifiedframework.core.loop.Tickable;
 import com.gitlab.aecsocket.unifiedframework.core.registry.Identifiable;
+import com.gitlab.aecsocket.unifiedframework.core.serialization.configurate.vector.Vector3ISerializer;
 import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
+import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector3I;
 import com.gitlab.aecsocket.unifiedframework.paper.util.plugin.BasePlugin;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.server.ServerLoadEvent;
+import org.spongepowered.configurate.objectmapping.ObjectMapper;
 import org.spongepowered.configurate.serialize.SerializationException;
+import org.spongepowered.configurate.util.NamingSchemes;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Type;
@@ -37,6 +44,7 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
     public static NaturaPlugin instance() { return instance; }
 
     private final Map<World, WorldData> worlds = new HashMap<>();
+    private final GlobalTemperature temperature = new GlobalTemperature(this);
     private PaperCommandManager commandManager;
     private ProtocolManager protocol;
     private World dummyWorld;
@@ -46,14 +54,13 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
         super.onEnable();
         instance = this;
         commandManager = new PaperCommandManager(this);
+        commandManager.enableUnstableAPI("help");
         commandManager.getCommandContexts().registerContext(World.class, ctx -> {
             World world = Bukkit.getWorld(ctx.popFirstArg());
             if (world == null)
                 throw new InvalidCommandArgument("Invalid world");
             return world;
         });
-        commandManager.getCommandCompletions().registerCompletion("worlds", ctx ->
-                Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList()));
         commandManager.registerCommand(new NaturaCommand(this));
 
         protocol = ProtocolLibrary.getProtocolManager();
@@ -66,6 +73,24 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
         dummyWorld = Bukkit.createWorld(new WorldCreator("dummy"));
     }
 
+    protected void createConfigOptions() {
+        configOptions = configOptions.serializers(builder -> {
+            ObjectMapper.Factory mapper = ObjectMapper.factoryBuilder()
+                    .defaultNamingScheme(NamingSchemes.SNAKE_CASE)
+                    .build();
+            builder
+                    .register(Vector3I.class, Vector3ISerializer.INSTANCE)
+                    .registerAnnotatedObjects(mapper);
+        });
+    }
+
+    @Override
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void serverLoad(ServerLoadEvent event) {
+        createConfigOptions();
+        super.serverLoad(event);
+    }
+
     @Override
     protected void loadSettings(List<LoggingEntry> result) {
         super.loadSettings(result);
@@ -74,6 +99,7 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
                 Metrics metrics = new Metrics(this, BSTATS_PLUGIN_ID);
                 // TODO add some cool charts
             }
+            temperature.settings(setting(n -> n.get(GlobalTemperature.Settings.class), "temperature"));
         }
     }
 
@@ -114,6 +140,7 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
         for (WorldData world : worlds.values()) {
             tickContext.tick(world);
         }
+        tickContext.tick(temperature);
     }
 
     public void sendPacket(PacketContainer packet, Player target, boolean wire) {

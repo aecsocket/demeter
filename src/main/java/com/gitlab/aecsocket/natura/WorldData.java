@@ -8,6 +8,7 @@ import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
 import com.gitlab.aecsocket.unifiedframework.core.loop.Tickable;
 import org.bukkit.World;
 import org.bukkit.event.block.BlockGrowEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 
 import java.util.ArrayList;
@@ -52,13 +53,9 @@ public class WorldData implements Tickable {
         }
     }
 
-    public void blockGrow(BlockGrowEvent event) {
-        run(f -> f.blockGrow(event));
-    }
-
-    public void mapChunk(PacketEvent event) {
-        run(f -> f.mapChunk(event));
-    }
+    public void blockGrow(BlockGrowEvent event) { run(f -> f.blockGrow(event)); }
+    public void mapChunk(PacketEvent event) { run(f -> f.mapChunk(event)); }
+    public void itemConsume(PlayerItemConsumeEvent event) { run(f -> f.itemConsume(event)); }
 
     @Override
     public void tick(TickContext tickContext) {
