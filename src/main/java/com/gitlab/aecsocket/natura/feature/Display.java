@@ -74,10 +74,14 @@ public class Display implements Feature {
                         "temperature", String.format(locale, config.temperatureFormat, config.temperatureFunctionNode.value()));
             }
 
+<<<<<<< HEAD
             long time = (player.getWorld().getTime() + 6000) % 24000;
             player.sendActionBar(plugin().gen(locale, "display.action_bar",
                     "hours", String.format("%02d", time / 1000),
                     "minutes", String.format("%02d", (int) (((time % 1000) / 1000d) * 60)),
+=======
+            player.sendActionBar(plugin().gen(locale, "display.action_bar",
+>>>>>>> 5391bb6e921b8ac49d252d075012c5f4a025fe08
                     "season", textSeason,
                     "temperature", textTemperature));
         }

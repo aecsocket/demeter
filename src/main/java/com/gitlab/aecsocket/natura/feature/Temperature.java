@@ -4,7 +4,14 @@ import com.gitlab.aecsocket.unifiedframework.core.loop.MinecraftSyncLoop;
 import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
 import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector3I;
 import com.google.common.util.concurrent.AtomicDouble;
+<<<<<<< HEAD
 import org.bukkit.*;
+=======
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.World;
+>>>>>>> 5391bb6e921b8ac49d252d075012c5f4a025fe08
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Waterlogged;
@@ -43,6 +50,7 @@ public class Temperature implements Feature {
         @Override
         public double apply(Temperature feature, Player player, double temperature) {
             temperature += types.getOrDefault(player.getWorld().getEnvironment(), 0d);
+<<<<<<< HEAD
             Location location = player.getEyeLocation();
             World world = location.getWorld();
             if (!world.isClearWeather()) {
@@ -54,6 +62,15 @@ public class Temperature implements Feature {
                 double ticksPerDay = plugin().ticksPerDay();
                 temperature += Math.sin(((world.getFullTime() % ticksPerDay) / ticksPerDay) * 2 * Math.PI) * time;
             }
+=======
+            if (!player.getLocation().getWorld().isClearWeather())
+                temperature += precipitation;
+            World world = player.getWorld();
+            if (world.getEnvironment() == World.Environment.NORMAL) {
+                double ticksPerDay = plugin().ticksPerDay();
+                temperature += Math.sin(((world.getFullTime() % ticksPerDay) / ticksPerDay) * 2 * Math.PI) * time;
+            }
+>>>>>>> 5391bb6e921b8ac49d252d075012c5f4a025fe08
             return temperature;
         }
     }
@@ -123,10 +140,17 @@ public class Temperature implements Feature {
             public Vector3I radius;
             public Map<BlockData, Double> blocks;
         }
+<<<<<<< HEAD
 
         @Setting(nodeFromParent = true)
         public List<BlockRelation> relations;
 
+=======
+
+        @Setting(nodeFromParent = true)
+        public List<BlockRelation> relations;
+
+>>>>>>> 5391bb6e921b8ac49d252d075012c5f4a025fe08
         @Override
         public double apply(Temperature feature, Player player, double temperature) {
             Location location = player.getLocation();
