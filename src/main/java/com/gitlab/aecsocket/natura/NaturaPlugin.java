@@ -1,146 +1,181 @@
 package com.gitlab.aecsocket.natura;
 
-import co.aikar.commands.InvalidCommandArgument;
 import co.aikar.commands.PaperCommandManager;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.ProtocolManager;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.injector.netty.WirePacket;
-import com.gitlab.aecsocket.natura.feature.GlobalTemperature;
+import com.gitlab.aecsocket.natura.feature.Display;
+import com.gitlab.aecsocket.natura.feature.Feature;
+import com.gitlab.aecsocket.natura.feature.Seasons;
+import com.gitlab.aecsocket.natura.feature.Temperature;
 import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
 import com.gitlab.aecsocket.unifiedframework.core.loop.Tickable;
-import com.gitlab.aecsocket.unifiedframework.core.registry.Identifiable;
-import com.gitlab.aecsocket.unifiedframework.core.serialization.configurate.vector.Vector3ISerializer;
+import com.gitlab.aecsocket.unifiedframework.core.util.MapInit;
 import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
-import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector3I;
 import com.gitlab.aecsocket.unifiedframework.paper.util.plugin.BasePlugin;
+import com.gitlab.aecsocket.unifiedframework.paper.util.plugin.PluginHook;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
-import org.bukkit.World;
-import org.bukkit.WorldCreator;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.server.ServerLoadEvent;
-import org.spongepowered.configurate.objectmapping.ObjectMapper;
+import org.spongepowered.configurate.BasicConfigurationNode;
+import org.spongepowered.configurate.ConfigurateException;
+import org.spongepowered.configurate.ConfigurationNode;
+import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
 import org.spongepowered.configurate.serialize.SerializationException;
-import org.spongepowered.configurate.util.NamingSchemes;
 
+import java.io.File;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Type;
 import java.nio.file.Path;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
-public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tickable {
+public final class NaturaPlugin extends BasePlugin implements Tickable {
     public static final int BSTATS_PLUGIN_ID = 10976;
+    public static final String STATE_ROOT = "state";
+    public static final int TICKS_PER_DAY = 20 * 60 * 20;
     private static NaturaPlugin instance;
-    public static NaturaPlugin instance() { return instance; }
+    public static NaturaPlugin plugin() { return instance; }
 
-    private final Map<World, WorldData> worlds = new HashMap<>();
-    private final GlobalTemperature temperature = new GlobalTemperature(this);
+    private final Map<String, Feature.Type> featureTypes = Collections.unmodifiableMap(MapInit.of(new HashMap<String, Feature.Type>())
+            .init(Display.ID, Display.TYPE)
+            .init(Seasons.ID, Seasons.TYPE)
+            .init(Temperature.ID, Temperature.TYPE)
+            /*.init("weather", Weather.FACTORY)
+            .init("wind", Wind.FACTORY)*/
+            .get());
+    private final Map<String, Feature> features = new HashMap<>();
     private PaperCommandManager commandManager;
     private ProtocolManager protocol;
-    private World dummyWorld;
 
     @Override
     public void onEnable() {
         super.onEnable();
         instance = this;
         commandManager = new PaperCommandManager(this);
-        commandManager.enableUnstableAPI("help");
-        commandManager.getCommandContexts().registerContext(World.class, ctx -> {
-            World world = Bukkit.getWorld(ctx.popFirstArg());
-            if (world == null)
-                throw new InvalidCommandArgument("Invalid world");
-            return world;
-        });
-        commandManager.registerCommand(new NaturaCommand(this));
+        NaturaCommand command = new NaturaCommand();
+        command.initManager(commandManager);
+        commandManager.registerCommand(command);
 
         protocol = ProtocolLibrary.getProtocolManager();
-        protocol.addPacketListener(new NaturaPacketAdapter(this));
+        protocol.addPacketListener(new NaturaPacketAdapter());
 
-        Bukkit.getPluginManager().registerEvents(new NaturaListener(this), this);
-
+        Bukkit.getPluginManager().registerEvents(new NaturaListener(), this);
         schedulerLoop.register(this);
-
-        dummyWorld = Bukkit.createWorld(new WorldCreator("dummy"));
-    }
-
-    protected void createConfigOptions() {
-        configOptions = configOptions.serializers(builder -> {
-            ObjectMapper.Factory mapper = ObjectMapper.factoryBuilder()
-                    .defaultNamingScheme(NamingSchemes.SNAKE_CASE)
-                    .build();
-            builder
-                    .register(Vector3I.class, Vector3ISerializer.INSTANCE)
-                    .registerAnnotatedObjects(mapper);
-        });
     }
 
     @Override
-    @EventHandler(priority = EventPriority.MONITOR)
+    public void onDisable() {
+        save();
+    }
+
+    // TODO maybe support some deeper API?
+    @Override protected List<PluginHook> hooks() { return Collections.emptyList(); }
+
+    @Override
+    @EventHandler
     public void serverLoad(ServerLoadEvent event) {
-        createConfigOptions();
         super.serverLoad(event);
-    }
-
-    @Override
-    protected void loadSettings(List<LoggingEntry> result) {
-        super.loadSettings(result);
-        if (settings.root() != null) {
-            if (setting(n -> n.getBoolean(true), "enable_bstats")) {
-                Metrics metrics = new Metrics(this, BSTATS_PLUGIN_ID);
-                // TODO add some cool charts
-            }
-            temperature.settings(setting(n -> n.get(GlobalTemperature.Settings.class), "temperature"));
-        }
+        int saveInterval = setting(n -> (int) (n.getDouble(30) * 20 * 60), "save_interval");
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::save, saveInterval, saveInterval);
     }
 
     @Override
     public boolean load(List<LoggingEntry> result) {
-        boolean success = super.load(result);
+        if (super.load(result)) {
+            if (setting(n -> n.getBoolean(true), "enable_bstats")) {
+                Metrics metrics = new Metrics(this, BSTATS_PLUGIN_ID);
+                // TODO add some cool charts
+            }
 
-        for (var entry : setting(n -> n.childrenMap().entrySet(), "worlds")) {
-            String name = entry.getKey().toString();
-            World world = Bukkit.getWorld(name);
-            if (world == null) {
-                result.add(LoggingEntry.of(LogLevel.WARN, "World '%s' is not loaded", name));
-                continue;
+            for (var entry : setting(n -> n.childrenMap().entrySet(), "features")) {
+                // Get config
+                String id = entry.getKey().toString();
+                Feature.Type type = featureTypes.get(id);
+                if (type == null) {
+                    result.add(LoggingEntry.of(LogLevel.WARN, "Invalid feature type '%s'", id));
+                    continue;
+                }
+
+                ConfigurationNode state = loadState(id);
+                Feature feature;
+                try {
+                    feature = type.load(entry.getValue(), state);
+                } catch (SerializationException | RuntimeException e) {
+                    result.add(LoggingEntry.of(LogLevel.WARN, e, "Could not load '%s'", id));
+                    continue;
+                }
+
+                if (feature == null) {
+                    result.add(LoggingEntry.of(LogLevel.WARN, "Feature type '%s' created null feature", id));
+                    continue;
+                }
+
+                features.put(id, feature);
+                result.add(LoggingEntry.of(LogLevel.VERBOSE, "Loaded feature '%s'", id));
             }
-            try {
-                worlds.put(world, new WorldData(this, world, entry.getValue().get(WorldData.Settings.class)));
-            } catch (SerializationException e) {
-                result.add(LoggingEntry.of(LogLevel.WARN, e, "Could not load info for world '%s'", name));
-                continue;
-            }
-            result.add(LoggingEntry.of(LogLevel.VERBOSE, "Loaded info for world '%s'", name));
+            return true;
         }
-
-        return success;
+        return false;
     }
 
-    @Override protected Map<Path, Type> registryTypes() { return Collections.emptyMap(); }
+    public void save() {
+        for (Feature feature : features.values()) {
+            String id = feature.id();
+            try {
+                saveState(id, BasicConfigurationNode.root(configOptions).set(feature.state()));
+            } catch (SerializationException e) {
+                log(LogLevel.WARN, e, "Could not create state for '%s'", id);
+            }
+        }
+        log(LogLevel.VERBOSE, "Saved state");
+    }
+
+    @Override protected Map<Path, java.lang.reflect.Type> registryTypes() { return Collections.emptyMap(); }
     @Override protected void registerDefaults() {}
 
+    public Map<String, Feature.Type> featureTypes() { return featureTypes; }
+    public Map<String, Feature> features() { return new HashMap<>(features); }
+    @SuppressWarnings("unchecked")
+    public <T extends Feature> T feature(String id) { return (T) features.get(id); }
     public PaperCommandManager commandManager() { return commandManager; }
-    public Map<World, WorldData> worlds() { return worlds; }
-    public WorldData worldData(World world) { return worlds.get(world); }
     public ProtocolManager protocol() { return protocol; }
-    public World dummyWorld() { return dummyWorld; }
+
+    public File stateFolder() { return new File(getDataFolder(), STATE_ROOT); }
+    public File stateFile(String id) { return new File(stateFolder(), id + ".conf"); }
+    public HoconConfigurationLoader stateLoader(String id) {
+        return HoconConfigurationLoader.builder()
+                .file(stateFile(id))
+                .defaultOptions(configOptions)
+                .build();
+    }
+    public ConfigurationNode loadState(String id) {
+        File stateFile = stateFile(id);
+        if (!stateFile.exists()) {
+            return BasicConfigurationNode.root(configOptions);
+        }
+        try {
+            return stateLoader(id).load();
+        } catch (ConfigurateException e) {
+            log(LogLevel.WARN, e, "Could not load state for '%s'", id);
+            return null;
+        }
+    }
+    public void saveState(String id, ConfigurationNode state) {
+        try {
+            stateLoader(id).save(state);
+        } catch (ConfigurateException e) {
+            log(LogLevel.WARN, e, "Could not save state for '%s'", id);
+        }
+    }
 
     @Override
     public void tick(TickContext tickContext) {
-        for (WorldData world : worlds.values()) {
-            tickContext.tick(world);
-        }
-        tickContext.tick(temperature);
+        features.values().forEach(tickContext::tick);
     }
 
     public void sendPacket(PacketContainer packet, Player target, boolean wire) {
@@ -168,4 +203,7 @@ public final class NaturaPlugin extends BasePlugin<Identifiable> implements Tick
     public void sendPacket(Player target, PacketType type, Consumer<PacketContainer> builder) {
         sendPacket(target, type, false, builder);
     }
+
+    public double dayLengthMultiplier() { return setting(n -> n.getDouble(1), "day_length_multiplier"); }
+    public long ticksPerDay() { return (long) (TICKS_PER_DAY * dayLengthMultiplier()); }
 }
