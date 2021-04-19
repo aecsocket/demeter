@@ -5,6 +5,7 @@ import com.gitlab.aecsocket.unifiedframework.core.parsing.math.MathExpressionNod
 import com.gitlab.aecsocket.unifiedframework.core.parsing.math.MathParser;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Required;
@@ -16,23 +17,14 @@ import static com.gitlab.aecsocket.natura.NaturaPlugin.plugin;
 
 public class Display implements Feature {
     public static final String ID = "display";
-    public static final Type TYPE = (config, state) -> {
-        Display feature = new Display(
-                config.get(Config.class)
-        );
-        feature.config.init();
-        return feature;
-    };
+    public static final Type TYPE = (config, state) -> new Display(
+            config.get(Config.class)
+    );
 
     @ConfigSerializable
     public static class Config {
         @Required public String temperatureFormat;
-        @Required public String temperatureFunction;
-        private transient MathExpressionNode temperatureFunctionNode;
-
-        private void init() {
-            temperatureFunctionNode = MathParser.parses(temperatureFunction);
-        }
+        @Required public MathExpressionNode temperatureFunction;
     }
 
     private Config config;
@@ -69,19 +61,15 @@ public class Display implements Feature {
                 textTemperature = plugin().gen(locale, "display.temperature.disabled");
             else {
                 double current = temperature.currentTemperature(player);
-                config.temperatureFunctionNode.setVariable("x", current);
+                config.temperatureFunction.setVariable("x", current);
                 textTemperature = plugin().gen(locale, "display.temperature.temperature",
-                        "temperature", String.format(locale, config.temperatureFormat, config.temperatureFunctionNode.value()));
+                        "temperature", String.format(locale, config.temperatureFormat, config.temperatureFunction.value()));
             }
 
-<<<<<<< HEAD
             long time = (player.getWorld().getTime() + 6000) % 24000;
             player.sendActionBar(plugin().gen(locale, "display.action_bar",
                     "hours", String.format("%02d", time / 1000),
                     "minutes", String.format("%02d", (int) (((time % 1000) / 1000d) * 60)),
-=======
-            player.sendActionBar(plugin().gen(locale, "display.action_bar",
->>>>>>> 5391bb6e921b8ac49d252d075012c5f4a025fe08
                     "season", textSeason,
                     "temperature", textTemperature));
         }

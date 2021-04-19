@@ -6,10 +6,7 @@ import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.ProtocolManager;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.injector.netty.WirePacket;
-import com.gitlab.aecsocket.natura.feature.Display;
-import com.gitlab.aecsocket.natura.feature.Feature;
-import com.gitlab.aecsocket.natura.feature.Seasons;
-import com.gitlab.aecsocket.natura.feature.Temperature;
+import com.gitlab.aecsocket.natura.feature.*;
 import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
 import com.gitlab.aecsocket.unifiedframework.core.loop.Tickable;
 import com.gitlab.aecsocket.unifiedframework.core.util.MapInit;
@@ -43,6 +40,7 @@ public final class NaturaPlugin extends BasePlugin implements Tickable {
 
     private final Map<String, Feature.Type> featureTypes = Collections.unmodifiableMap(MapInit.of(new HashMap<String, Feature.Type>())
             .init(Display.ID, Display.TYPE)
+            .init(TimeDilation.ID, TimeDilation.TYPE)
             .init(Seasons.ID, Seasons.TYPE)
             .init(Temperature.ID, Temperature.TYPE)
             /*.init("weather", Weather.FACTORY)
