@@ -1,6 +1,8 @@
 package com.gitlab.aecsocket.natura.feature;
 
-import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
+import com.gitlab.aecsocket.unifiedframework.core.scheduler.Scheduler;
+import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
+import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
 import org.bukkit.Bukkit;
 import org.bukkit.GameRule;
 import org.bukkit.World;
@@ -45,22 +47,26 @@ public class TimeDilation implements Feature {
     @Override public Object state() { return null; }
 
     @Override
-    public void tick(TickContext tickContext) {
-        for (World world : Bukkit.getWorlds()) {
-            WorldConfig data = config.worlds.get(world).orElse(null);
-            if (data == null || !data.enabled)
-                continue;
-            if (world.getGameRuleValue(GameRule.DO_DAYLIGHT_CYCLE) == Boolean.FALSE)
-                continue;
+    public void tasks(Scheduler scheduler) {
+        scheduler.run(Task.repeating(ctx -> {
+            if (plugin().dayLengthMultiplier() == 1)
+                return;
+            for (World world : Bukkit.getWorlds()) {
+                WorldConfig data = config.worlds.get(world).orElse(null);
+                if (data == null || !data.enabled)
+                    continue;
+                if (world.getGameRuleValue(GameRule.DO_DAYLIGHT_CYCLE) == Boolean.FALSE)
+                    continue;
 
-            long time = world.getFullTime() - 1;
-            double timeDilation = 1 / plugin().dayLengthMultiplier();
-            tickProgress += timeDilation;
-            while (tickProgress > 1) {
-                --tickProgress;
-                ++time;
+                long time = world.getFullTime() - 1;
+                double timeDilation = 1 / plugin().dayLengthMultiplier();
+                tickProgress += timeDilation;
+                while (tickProgress > 1) {
+                    --tickProgress;
+                    ++time;
+                }
+                world.setFullTime(time);
             }
-            world.setFullTime(time);
-        }
+        }, Utils.MSPT));
     }
 }

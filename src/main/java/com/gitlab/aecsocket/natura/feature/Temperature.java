@@ -1,11 +1,11 @@
 package com.gitlab.aecsocket.natura.feature;
 
-import com.gitlab.aecsocket.unifiedframework.core.loop.MinecraftSyncLoop;
-import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
+import com.gitlab.aecsocket.unifiedframework.core.scheduler.Scheduler;
+import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
+import com.gitlab.aecsocket.unifiedframework.core.scheduler.TaskContext;
+import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
 import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector3I;
 import com.google.common.util.concurrent.AtomicDouble;
-import net.minecraft.server.v1_16_R3.BiomeBase;
-import org.bukkit.*;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -141,6 +141,8 @@ public class Temperature implements Feature {
                 for (int x = location.getBlockX() - radius.x(); x < location.getBlockX() + radius.x(); x++) {
                     for (int y = location.getBlockY() - radius.y(); y < location.getBlockY() + radius.y(); y++) {
                         for (int z = location.getBlockZ() - radius.z(); z < location.getBlockZ() + radius.z(); z++) {
+                            if (!world.isChunkLoaded(x / 16, z / 16))
+                                continue;
                             BlockData data = world.getBlockAt(x, y, z).getBlockData();
                             for (var entry : relation.blocks.entrySet()) {
                                 if (data.matches(entry.getKey())) {
@@ -262,7 +264,7 @@ public class Temperature implements Feature {
             if (test.test(current, entry.getKey())) {
                 Effect effect = entry.getValue();
                 if (effect.fire != null) {
-                    int rFire = effect.fire / MinecraftSyncLoop.TICKS_PER_SECOND;
+                    int rFire = effect.fire / Utils.TPS;
                     if (player.getFireTicks() < rFire)
                         player.setFireTicks(rFire);
                 }
@@ -282,28 +284,30 @@ public class Temperature implements Feature {
     }
 
     @Override
-    public void tick(TickContext tickContext) {
-        temperature.entrySet().removeIf(entry -> !entry.getKey().isValid());
-        long time = System.currentTimeMillis();
-        if (nextTemperatureShift == -1)
-            nextTemperatureShift = time;
-        if (nextEffectDamage == -1)
-            nextEffectDamage = time;
+    public void tasks(Scheduler scheduler) {
+        scheduler.run(Task.repeating(ctx -> {
+            temperature.entrySet().removeIf(entry -> !entry.getKey().isValid());
+            long time = System.currentTimeMillis();
+            if (nextTemperatureShift == -1)
+                nextTemperatureShift = time;
+            if (nextEffectDamage == -1)
+                nextEffectDamage = time;
 
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            double current = currentTemperature(player);
-            applyTemperature(player, current, config.effects.higherThan, (a, b) -> a >= b);
-            applyTemperature(player, current, config.effects.lowerThan, (a, b) -> a <= b);
-            while (time > nextEffectDamage) {
-                nextEffectDamage += config.effectDamageInterval;
-            }
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                double current = currentTemperature(player);
+                applyTemperature(player, current, config.effects.higherThan, (a, b) -> a >= b);
+                applyTemperature(player, current, config.effects.lowerThan, (a, b) -> a <= b);
+                while (time > nextEffectDamage) {
+                    nextEffectDamage += config.effectDamageInterval;
+                }
 
-            while (time >= nextTemperatureShift) {
-                nextTemperatureShift += config.temperatureShiftInterval;
-                double target = temperature(player);
-                current += (target - current) * config.temperatureShift;
-                temperature.put(player, current);
+                while (time >= nextTemperatureShift) {
+                    nextTemperatureShift += config.temperatureShiftInterval;
+                    double target = temperature(player);
+                    current += (target - current) * config.temperatureShift;
+                    temperature.put(player, current);
+                }
             }
-        }
+        }, Utils.MSPT));
     }
 }

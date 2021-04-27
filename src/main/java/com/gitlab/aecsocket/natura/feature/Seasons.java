@@ -3,32 +3,42 @@ package com.gitlab.aecsocket.natura.feature;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.events.PacketEvent;
 import com.gitlab.aecsocket.natura.NaturaPlugin;
-import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
+import com.gitlab.aecsocket.natura.util.FoliageColors;
+import com.gitlab.aecsocket.unifiedframework.core.scheduler.Scheduler;
+import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
+import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
+import com.gitlab.aecsocket.unifiedframework.core.util.color.RGBA;
+import com.gitlab.aecsocket.unifiedframework.core.util.data.Tuple3;
+import com.mojang.serialization.Lifecycle;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import net.kyori.adventure.text.Component;
-import net.minecraft.server.v1_16_R3.BiomeBase;
-import net.minecraft.server.v1_16_R3.BiomeStorage;
-import net.minecraft.server.v1_16_R3.IRegistry;
-import net.minecraft.server.v1_16_R3.PacketPlayOutMapChunk;
+import net.minecraft.server.v1_16_R3.*;
 import org.bukkit.*;
+import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
-import org.bukkit.craftbukkit.v1_16_R3.CraftChunk;
 import org.bukkit.craftbukkit.v1_16_R3.block.CraftBlock;
-import org.bukkit.craftbukkit.v1_16_R3.util.CraftMagicNumbers;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockGrowEvent;
+import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.event.world.TimeSkipEvent;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Required;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.gitlab.aecsocket.natura.NaturaPlugin.plugin;
 
 public class Seasons implements Feature {
+    public static final String PATH_FOLIAGE_COLORS = "foliage.png";
     public static final String ID = "seasons";
     public static final Type TYPE = (config, state) -> {
         Seasons feature = new Seasons(
@@ -36,6 +46,11 @@ public class Seasons implements Feature {
                 state.get(State.class)
         );
         feature.config.init();
+        try {
+            feature.foliageColors = FoliageColors.load(ImageIO.read(plugin().file(PATH_FOLIAGE_COLORS)));
+        } catch (IOException e) {
+            throw new RuntimeException("Could not load foliage colors from " + PATH_FOLIAGE_COLORS, e);
+        }
         return feature;
     };
 
@@ -67,7 +82,7 @@ public class Seasons implements Feature {
     public static class Season {
         public transient String name;
         public Color color;
-        public Integer biome;
+        public RGBA foliageColor;
         public int cycleWeight = 1;
         public double fertility = 1;
         public Integer cropSafeY;
@@ -173,7 +188,11 @@ public class Seasons implements Feature {
 
     private Config config;
     private State state;
-    private long lastTime = -1;
+    private FoliageColors foliageColors;
+    private int lastSkip = -1;
+    private final Map<Integer, Biome> biomeIdToBiome = new HashMap<>();
+    private final List<Tuple3<Integer, ResourceKey<BiomeBase>, BiomeBase>> customBiomes = new ArrayList<>();
+    private final Map<Season, Map<Integer, Integer>> biomeMappings = new HashMap<>();
 
     public Seasons(Config config, State state) {
         this.config = config;
@@ -184,6 +203,8 @@ public class Seasons implements Feature {
 
     public Config config() { return config; }
     @Override public State state() { return state; }
+
+    public FoliageColors foliageColors() { return foliageColors; }
 
     public long cycleDuration() { return (long) (config.cycleDuration * plugin().ticksPerDay()); }
     public double cycleProgress() { return state.cycleElapsed / (double) cycleDuration(); }
@@ -199,15 +220,245 @@ public class Seasons implements Feature {
     public Season season(Player player) { return season(player.getLocation()); }
 
     @Override
-    public void tick(TickContext tickContext) {
-        ++state.cycleElapsed;
-        long duration = cycleDuration();
-        if (state.cycleElapsed >= duration) {
-            state.cycleElapsed = state.cycleElapsed % duration;
+    public void tasks(Scheduler scheduler) {
+        scheduler.run(Task.repeating(ctx -> {
+            ++state.cycleElapsed;
+            long duration = cycleDuration();
+            if (state.cycleElapsed >= duration) {
+                state.cycleElapsed = state.cycleElapsed % duration;
+            }
+            if (state.cycleElapsed < 0) { // can happen if time skips
+                state.cycleElapsed = 0;
+            }
+        }, Utils.MSPT));
+    }
+
+    private Field getField(Class<?> clazz, String name) throws NoSuchFieldException {
+        Field field = clazz.getDeclaredField(name);
+        field.setAccessible(true);
+        return field;
+    }
+
+    @Override
+    public void onDisable() {
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void serverLoad(ServerLoadEvent event) {
+        try {
+            IRegistry<BiomeBase> biomeRegistry = RegistryGeneration.WORLDGEN_BIOME;
+            var biomeIds = (Int2ObjectMap<ResourceKey<BiomeBase>>) getField(BiomeRegistry.class, "c").get(null);
+
+            // 1. Map [default biome IDs] to [Bukkit biomes]
+            biomeIdToBiome.clear();
+            biomeIds.forEach((id, key) -> biomeIdToBiome.put(id, CraftBlock.biomeBaseToBiome(biomeRegistry, biomeRegistry.a(key))));
+
+            // 2. Collect every [default biome]
+            Map<ResourceKey<BiomeBase>, BiomeBase> defaults = new HashMap<>();
+            for (ResourceKey<BiomeBase> key : biomeIds.values()) {
+                defaults.put(key, biomeRegistry.a(key));
+            }
+
+            // Set up reflection for step 3
+            Method registerBiomeMethod = BiomeRegistry.class.getDeclaredMethod("a", int.class, ResourceKey.class, BiomeBase.class);
+            registerBiomeMethod.setAccessible(true);
+
+            // Get all fields of BiomeFog
+            Field fogFog = getField(BiomeFog.class, "b");
+            Field fogWater = getField(BiomeFog.class, "c");
+            Field fogWaterFog = getField(BiomeFog.class, "d");
+            Field fogSky = getField(BiomeFog.class, "e");
+            Field fogFoliage = getField(BiomeFog.class, "f");
+            Field fogGrass = getField(BiomeFog.class, "g");
+            Field fogGrassModifier = getField(BiomeFog.class, "h");
+            Field fogParticle = getField(BiomeFog.class, "i");
+            Field fogAmbientSound = getField(BiomeFog.class, "j");
+            Field fogMoodSound = getField(BiomeFog.class, "k");
+            Field fogAdditionsSound = getField(BiomeFog.class, "l");
+            Field fogMusic = getField(BiomeFog.class, "m");
+
+            // 3. For each [season]...
+            for (Season season : config.seasons.values()) {
+                System.out.println(season.name + ": " + season.foliageColor);
+                biomeMappings.put(season, new HashMap<>());
+                int id = 0;
+                // For each [default biome]...
+                for (var entry : defaults.entrySet()) {
+                    // a. Create a copy of the [biome] with modified foliage colours
+                    BiomeBase oldBiome = entry.getValue();
+                    BiomeFog oldFog = oldBiome.l();
+
+                    OptionalInt foliage = OptionalInt.empty();
+                    OptionalInt grass = OptionalInt.empty();
+                    if (season.foliageColor != null) {
+                        RGBA biomeColor = RGBA.ofRGB(((Optional<Integer>) fogFoliage.get(oldFog))
+                                .orElseGet(() -> foliageColors.get(oldBiome.k(), oldBiome.getHumidity())));
+                        foliage = OptionalInt.of(biomeColor.lerp(season.foliageColor).rgbValue());
+                        grass = OptionalInt.of(biomeColor.lerp(season.foliageColor).rgbValue());
+                    }
+
+                    BiomeFog.a newFogBuilder = new BiomeFog.a()
+                            .a((int) fogFog.get(oldFog))
+                            .b((int) fogWater.get(oldFog))
+                            .c((int) fogWaterFog.get(oldFog))
+                            .d((int) fogSky.get(oldFog))
+                            .a((BiomeFog.GrassColor) fogGrassModifier.get(oldFog));
+                    if (foliage.isPresent()) {
+                        newFogBuilder
+                                .e(foliage.getAsInt())
+                                .f(grass.getAsInt());
+                    }
+                    ((Optional<BiomeParticles>) fogParticle.get(oldFog)).ifPresent(newFogBuilder::a);
+                    ((Optional<SoundEffect>) fogAmbientSound.get(oldFog)).ifPresent(newFogBuilder::a);
+                    ((Optional<CaveSoundSettings>) fogMoodSound.get(oldFog)).ifPresent(newFogBuilder::a);
+                    ((Optional<CaveSound>) fogAdditionsSound.get(oldFog)).ifPresent(newFogBuilder::a);
+                    ((Optional<Music>) fogMusic.get(oldFog)).ifPresent(newFogBuilder::a);
+                    BiomeFog newFog = newFogBuilder.a();
+                    BiomeBase newBiome = new BiomeBase.a()
+                            .a(oldBiome.c()) // a, precipitation
+                            .a(oldBiome.t()) // b, geography/category
+                            .a(oldBiome.h()) // c, depth
+                            .b(oldBiome.j()) // d, scale
+                            .c(oldBiome.k()) // e, temperature
+                            .a(BiomeBase.TemperatureModifier.NONE) // f, temperature modifier (cannot get this from a BiomeBase)
+                            .d(oldBiome.getHumidity()) // g, downfall/humidity
+                            .a(newFog) // h, special effects/fog (MODIFIED)
+                            .a(oldBiome.b()) // i, settings mobs
+                            .a(oldBiome.e()) // j, settings generation
+                            .a();
+
+                    // b. Register the [new biome] in an empty ID slot
+                    for (; biomeIds.containsKey(id); id++);
+                    ResourceKey<BiomeBase> key = entry.getKey();
+                    MinecraftKey location = key.a();
+                    ResourceKey<BiomeBase> newKey = ResourceKey.a(IRegistry.ay, new MinecraftKey(location.getNamespace(), location.getKey() + "_natura_" + season.name));
+                    //registerBiomeMethod.invoke(null, id, newKey, newBiome);
+                    customBiomes.add(Tuple3.of(id, newKey, newBiome));
+                    biomeIds.put(id, newKey);
+                    biomeMappings.get(season).put(biomeRegistry.a(oldBiome), id);
+                }
+            }
+        } catch (NoSuchMethodException | NoSuchFieldException | IllegalAccessException e) {
+            e.printStackTrace();
         }
-        if (state.cycleElapsed < 0) { // can happen if time skips
-            state.cycleElapsed = 0;
-        }
+
+//        var biomeRegistry = (IRegistryWritable<BiomeBase>) (IRegistryWritable)
+//                IRegistryCustom.Dimension.a.b(ResourceKey.a(MinecraftKey.a("worldgen/biome")));
+//
+//            /*
+//            Steps:
+//            1. Map [default biome IDs] to [Bukkit biomes]
+//            2. Collect every [default biome]
+//            3. For each [season]...
+//                 For each [default biome]...
+//                   a. Create a copy of the [biome] with modified foliage colours
+//                   b. Register the [new biome] in an empty ID slot
+//             */
+//
+//        // Step 1
+//        biomeIdToBiome.clear();
+//        biomeRegistry.forEach(biome -> biomeIdToBiome.put(biomeRegistry.a(biome), CraftBlock.biomeBaseToBiome(biomeRegistry, biome)));
+//
+//        try {
+//            biomeMappings.clear();
+//
+//            // Step 2
+//            // TODO better way of getting integer IDs
+//            @SuppressWarnings("unchecked")
+//            var biomeIds = (Int2ObjectMap<ResourceKey<BiomeBase>>) getField(BiomeRegistry.class, "c").get(null);
+//            Map<ResourceKey<BiomeBase>, BiomeBase> defaults = new HashMap<>();
+//            for (ResourceKey<BiomeBase> key : biomeIds.values()) {
+//                defaults.put(key, biomeRegistry.a(key));
+//            }
+//
+//            // Step 3
+//
+//            // Get all fields of BiomeFog
+//            Field fogFog = getField(BiomeFog.class, "b");
+//            Field fogWater = getField(BiomeFog.class, "c");
+//            Field fogWaterFog = getField(BiomeFog.class, "d");
+//            Field fogSky = getField(BiomeFog.class, "e");
+//            Field fogFoliage = getField(BiomeFog.class, "f");
+//            Field fogGrass = getField(BiomeFog.class, "g");
+//            Field fogGrassModifier = getField(BiomeFog.class, "h");
+//            Field fogParticle = getField(BiomeFog.class, "i");
+//            Field fogAmbientSound = getField(BiomeFog.class, "j");
+//            Field fogMoodSound = getField(BiomeFog.class, "k");
+//            Field fogAdditionsSound = getField(BiomeFog.class, "l");
+//            Field fogMusic = getField(BiomeFog.class, "m");
+//
+//            for (Season season : config.seasons.values()) {
+//                biomeMappings.put(season, new HashMap<>());
+//
+//                Map<ResourceKey<BiomeBase>, BiomeBase> toAdd = new HashMap<>(defaults);
+//                for (int newId = 0; !toAdd.isEmpty(); newId++) {
+//                    if (biomeIds.containsKey(newId))
+//                        continue;
+//
+//                    Map.Entry<ResourceKey<BiomeBase>, BiomeBase> next = toAdd.entrySet().iterator().next();
+//                    // make a new BiomeBase of our own
+//                    BiomeBase oldBiome = next.getValue();
+//                    BiomeFog oldFog = oldBiome.l();
+//                    BiomeFog.a newFogBuilder = new BiomeFog.a()
+//                            .a((int) fogFog.get(oldFog))
+//                            .b((int) fogWater.get(oldFog))
+//                            .c((int) fogWaterFog.get(oldFog))
+//                            .d((int) fogSky.get(oldFog))
+//                            .a((BiomeFog.GrassColor) fogGrassModifier.get(oldFog));
+//                    ((Optional<Integer>) fogFoliage.get(oldFog)).ifPresent(v -> newFogBuilder.e(16711680)/*newFogBuilder::e*/);
+//                    ((Optional<Integer>) fogGrass.get(oldFog)).ifPresent(newFogBuilder::f);
+//                    ((Optional<BiomeParticles>) fogParticle.get(oldFog)).ifPresent(newFogBuilder::a);
+//                    ((Optional<SoundEffect>) fogAmbientSound.get(oldFog)).ifPresent(newFogBuilder::a);
+//                    ((Optional<CaveSoundSettings>) fogMoodSound.get(oldFog)).ifPresent(newFogBuilder::a);
+//                    ((Optional<CaveSound>) fogAdditionsSound.get(oldFog)).ifPresent(newFogBuilder::a);
+//                    ((Optional<Music>) fogMusic.get(oldFog)).ifPresent(newFogBuilder::a);
+//                    BiomeFog newFog = newFogBuilder.a();
+//                    BiomeBase newBiome = new BiomeBase.a()
+//                            .a(oldBiome.c()) // a, precipitation
+//                            .a(oldBiome.t()) // b, geography/category
+//                            .a(oldBiome.h()) // c, depth
+//                            .b(oldBiome.j()) // d, scale
+//                            .c(oldBiome.k()) // e, temperature
+//                            .a(BiomeBase.TemperatureModifier.NONE) // f, temperature modifier (cannot get this from a BiomeBase)
+//                            .d(oldBiome.getHumidity()) // g, downfall/humidity
+//                            .a(newFog) // h, special effects/fog (MODIFIED)
+//                            .a(oldBiome.b()) // i, settings mobs
+//                            .a(oldBiome.e()) // j, settings generation
+//                            .a();
+//
+//                    ResourceKey<BiomeBase> oldKey = next.getKey();
+//                    ResourceKey<BiomeBase> newKey = ResourceKey.a(IRegistry.ay, new MinecraftKey(oldKey.a().getNamespace(), oldKey.a().getKey() + "_natura_" + season.name));
+//                    biomeRegistry.a(newId, newKey, newBiome, Lifecycle.stable()); // register
+//                    biomeIds.put(newId, newKey);
+//                    biomeMappings.get(season).put(biomeRegistry.a(oldBiome), newId);
+//                    toAdd.remove(oldKey);
+//                }
+//            }
+//
+//            // TODO debugging
+//            System.out.println("DONE SETTING UP BIOMES!");
+//            biomeIds.forEach((id, key) -> System.out.println(id + ": " + key.a()));
+//            for (Season season : config.seasons.values()) {
+//                System.out.println(season.name + ":");
+//                for (var entry : biomeMappings.get(season).entrySet()) {
+//                    System.out.println("  " + biomeIdToBiome.get(entry.getKey()).getKey() + ": " + entry.getKey() + " -> " + entry.getValue());
+//                }
+//            }
+//        } catch (NoSuchFieldException | IllegalAccessException e) {
+//            e.printStackTrace();
+//        }
+    }
+
+    @Override
+    public void login(PacketEvent event) {
+        PacketContainer packet = event.getPacket();
+
+        IRegistryCustom.Dimension codec = (IRegistryCustom.Dimension) packet.getModifier().read(6);
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        var biomeRegistry = (IRegistryWritable<BiomeBase>) (IRegistryWritable)
+                codec.b(ResourceKey.a(MinecraftKey.a("worldgen/biome")));
+        customBiomes.forEach(d -> biomeRegistry.a(d.a(), d.b(), d.c(), Lifecycle.stable()));
     }
 
     @Override
@@ -240,48 +491,28 @@ public class Seasons implements Feature {
 
     @Override
     public void timeSkip(TimeSkipEvent event) {
+        if (event.getSkipReason() == TimeSkipEvent.SkipReason.CUSTOM)
+            return;
+        if (lastSkip == Bukkit.getCurrentTick())
+            return; // TODO bug where 3 time skip events fire at once
         state.cycleElapsed += (event.getSkipAmount() % NaturaPlugin.TICKS_PER_DAY) * plugin().dayLengthMultiplier();
+        lastSkip = Bukkit.getCurrentTick();
     }
 
     @Override
     public void mapChunk(PacketEvent event) {
         Player player = event.getPlayer();
         PacketContainer packet = event.getPacket();
+
         World world = player.getWorld();
-        double cycleProgress = cycleProgress();
-
-        AtomicReference<Integer> biomeId = new AtomicReference<>();
-        config.config(world).ifPresent(worldData -> {
-            Biome biome = player.getLocation().getBlock().getBiome();
-            worldData.biomeData(biome).ifPresent(biomeData -> {
-                biomeId.set(biomeData.currentSeason(cycleProgress).biome);
-            });
-            /*
-            BiomeStorage biomes = ((CraftChunk) world.getChunkAt(packet.getIntegers().read(0), packet.getIntegers().read(1))).getHandle().getBiomeIndex();
-            IRegistry<BiomeBase> registry = (IRegistry<BiomeBase>) biomes.registry;
-            Map<Integer, Integer> biomeMap = new HashMap<>();
-            int[] biomeIds  = packet.getIntegerArrays().read(0);
-            for (int i = 0; i < biomeIds.length; i++) {
-                int biomeId = biomeIds[i];
-                if (biomeMap.containsKey(biomeId)) {
-                    biomeIds[i] = biomeMap.get(biomeId);
-                    break;
-                }
-
-                Biome biome = CraftBlock.biomeBaseToBiome(registry, registry.fromId(biomeId));
-                int fi = i;
-                data.biomeData(biome).ifPresent(biomeData -> {
-                    int mapped = biomes.registry.a(CraftBlock.biomeToBiomeBase(registry, biomeData.currentSeason(cycleProgress()).biome));
-                    biomeMap.put(biomeId, mapped);
-                    biomeIds[fi] = mapped;
-                });
-            }
-            packet.getIntegerArrays().write(0, biomeIds);*/
-        });
-        if (biomeId.get() != null) {
-            int[] biomes = new int[1024];
-            Arrays.fill(biomes, biomeId.get());
-            packet.getIntegerArrays().write(0, biomes);
+        int[] biomes = packet.getIntegerArrays().read(0);
+        for (int i = 0; i < biomes.length; i++) {
+            int id = biomes[i];
+            Biome biome = biomeIdToBiome.get(id);
+            Season season = season(world, biome);
+            if (season == null)
+                continue;
+            biomes[i] = biomeMappings.getOrDefault(season, Collections.emptyMap()).getOrDefault(id, id);
         }
     }
 }

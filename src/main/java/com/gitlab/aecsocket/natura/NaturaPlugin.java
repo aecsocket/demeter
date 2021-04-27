@@ -7,8 +7,6 @@ import com.comphenix.protocol.ProtocolManager;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.injector.netty.WirePacket;
 import com.gitlab.aecsocket.natura.feature.*;
-import com.gitlab.aecsocket.unifiedframework.core.loop.TickContext;
-import com.gitlab.aecsocket.unifiedframework.core.loop.Tickable;
 import com.gitlab.aecsocket.unifiedframework.core.util.MapInit;
 import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
@@ -27,14 +25,19 @@ import org.spongepowered.configurate.serialize.SerializationException;
 
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
-import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Consumer;
 
-public final class NaturaPlugin extends BasePlugin implements Tickable {
+public final class NaturaPlugin extends BasePlugin {
     public static final int BSTATS_PLUGIN_ID = 10976;
     public static final String STATE_ROOT = "state";
     public static final int TICKS_PER_DAY = 20 * 60 * 20;
+    public static final List<String> DEFAULT_RESOURCES = Arrays.asList(
+            SETTINGS_FILE,
+            LANGUAGE_ROOT + "/default_en-US.conf",
+            LANGUAGE_ROOT + "/en-US.conf",
+            Seasons.PATH_FOLIAGE_COLORS
+    );
     private static NaturaPlugin instance;
     public static NaturaPlugin plugin() { return instance; }
 
@@ -63,14 +66,15 @@ public final class NaturaPlugin extends BasePlugin implements Tickable {
         protocol.addPacketListener(new NaturaPacketAdapter());
 
         Bukkit.getPluginManager().registerEvents(new NaturaListener(), this);
-        schedulerLoop.register(this);
     }
 
     @Override
     public void onDisable() {
+        features.values().forEach(Feature::onDisable);
         save();
     }
 
+    @Override protected List<String> defaultResources() { return DEFAULT_RESOURCES; }
     // TODO maybe support some deeper API?
     @Override protected List<PluginHook> hooks() { return Collections.emptyList(); }
 
@@ -80,6 +84,7 @@ public final class NaturaPlugin extends BasePlugin implements Tickable {
         super.serverLoad(event);
         int saveInterval = setting(n -> (int) (n.getDouble(30) * 20 * 60), "save_interval");
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::save, saveInterval, saveInterval);
+        features.values().forEach(f -> f.serverLoad(event));
     }
 
     @Override
@@ -113,6 +118,7 @@ public final class NaturaPlugin extends BasePlugin implements Tickable {
                     continue;
                 }
 
+
                 features.put(id, feature);
                 result.add(LoggingEntry.of(LogLevel.VERBOSE, "Loaded feature '%s'", id));
             }
@@ -133,13 +139,14 @@ public final class NaturaPlugin extends BasePlugin implements Tickable {
         log(LogLevel.VERBOSE, "Saved state");
     }
 
-    @Override protected Map<Path, java.lang.reflect.Type> registryTypes() { return Collections.emptyMap(); }
-    @Override protected void registerDefaults() {}
-
     public Map<String, Feature.Type> featureTypes() { return featureTypes; }
+
     public Map<String, Feature> features() { return new HashMap<>(features); }
     @SuppressWarnings("unchecked")
     public <T extends Feature> T feature(String id) { return (T) features.get(id); }
+    public void registerFeature(Feature feature) { features.put(feature.id(), feature); }
+    public void unregisterFeature(String id) { features.remove(id); }
+
     public PaperCommandManager commandManager() { return commandManager; }
     public ProtocolManager protocol() { return protocol; }
 
@@ -169,11 +176,6 @@ public final class NaturaPlugin extends BasePlugin implements Tickable {
         } catch (ConfigurateException e) {
             log(LogLevel.WARN, e, "Could not save state for '%s'", id);
         }
-    }
-
-    @Override
-    public void tick(TickContext tickContext) {
-        features.values().forEach(tickContext::tick);
     }
 
     public void sendPacket(PacketContainer packet, Player target, boolean wire) {
