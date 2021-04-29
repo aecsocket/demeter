@@ -80,11 +80,13 @@ public final class NaturaPlugin extends BasePlugin {
 
     @Override
     @EventHandler
-    public void serverLoad(ServerLoadEvent event) {
-        super.serverLoad(event);
+    public boolean serverLoad(ServerLoadEvent event) {
+        if (!super.serverLoad(event))
+            return false;
         int saveInterval = setting(n -> (int) (n.getDouble(30) * 20 * 60), "save_interval");
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::save, saveInterval, saveInterval);
         features.values().forEach(f -> f.serverLoad(event));
+        return true;
     }
 
     @Override
