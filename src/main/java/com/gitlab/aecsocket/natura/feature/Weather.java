@@ -75,7 +75,7 @@ public class Weather implements Feature {
     public WorldState state(World world) { return state.worlds.computeIfAbsent(world, __ -> new WorldState()); }
 
     @Override
-    public void tasks(Scheduler scheduler) {
+    public void setUp(Scheduler scheduler) {
         scheduler.run(Task.repeating(ctx -> {
             boolean update = false;
             if (nextUpdate == -1)

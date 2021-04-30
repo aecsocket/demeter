@@ -47,7 +47,7 @@ public class TimeDilation implements Feature {
     @Override public Object state() { return null; }
 
     @Override
-    public void tasks(Scheduler scheduler) {
+    public void setUp(Scheduler scheduler) {
         scheduler.run(Task.repeating(ctx -> {
             if (plugin().dayLengthMultiplier() == 1)
                 return;

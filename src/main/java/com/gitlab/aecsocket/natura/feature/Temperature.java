@@ -2,7 +2,6 @@ package com.gitlab.aecsocket.natura.feature;
 
 import com.gitlab.aecsocket.unifiedframework.core.scheduler.Scheduler;
 import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
-import com.gitlab.aecsocket.unifiedframework.core.scheduler.TaskContext;
 import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
 import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector3I;
 import com.google.common.util.concurrent.AtomicDouble;
@@ -196,7 +195,7 @@ public class Temperature implements Feature {
         public Effects effects;
         @Required public double temperatureShift;
         @Required public long temperatureShiftInterval;
-        @Required public long effectDamageInterval;
+        @Required public long effectsInterval;
 
         private void init(Temperature feature) {
             factors.init();
@@ -226,8 +225,6 @@ public class Temperature implements Feature {
     private Config config;
     private final List<Factor> factors = new ArrayList<>();
     private final Map<Player, Double> temperature = new HashMap<>();
-    private long nextTemperatureShift = -1;
-    private long nextEffectDamage = -1;
 
     public Temperature(Config config) {
         this.config = config;
@@ -270,10 +267,8 @@ public class Temperature implements Feature {
                 }
 
                 if (effect.damage != null) {
-                    if (System.currentTimeMillis() >= nextEffectDamage) {
-                        player.damage(effect.damage);
-                        player.setNoDamageTicks(0);
-                    }
+                    player.damage(effect.damage);
+                    player.setNoDamageTicks(0);
                 }
 
                 if (effect.effects != null) {
@@ -284,30 +279,24 @@ public class Temperature implements Feature {
     }
 
     @Override
-    public void tasks(Scheduler scheduler) {
+    public void setUp(Scheduler scheduler) {
         scheduler.run(Task.repeating(ctx -> {
             temperature.entrySet().removeIf(entry -> !entry.getKey().isValid());
-            long time = System.currentTimeMillis();
-            if (nextTemperatureShift == -1)
-                nextTemperatureShift = time;
-            if (nextEffectDamage == -1)
-                nextEffectDamage = time;
 
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                double current = currentTemperature(player);
+                double target = temperature(player);
+                current += (target - current) * config.temperatureShift;
+                temperature.put(player, current);
+            }
+        }, config.temperatureShiftInterval));
+
+        scheduler.run(Task.repeating(ctx -> {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 double current = currentTemperature(player);
                 applyTemperature(player, current, config.effects.higherThan, (a, b) -> a >= b);
                 applyTemperature(player, current, config.effects.lowerThan, (a, b) -> a <= b);
-                while (time > nextEffectDamage) {
-                    nextEffectDamage += config.effectDamageInterval;
-                }
-
-                while (time >= nextTemperatureShift) {
-                    nextTemperatureShift += config.temperatureShiftInterval;
-                    double target = temperature(player);
-                    current += (target - current) * config.temperatureShift;
-                    temperature.put(player, current);
-                }
             }
-        }, Utils.MSPT));
+        }, config.effectsInterval));
     }
 }

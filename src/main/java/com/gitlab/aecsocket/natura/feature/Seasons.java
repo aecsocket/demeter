@@ -11,10 +11,10 @@ import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
 import com.gitlab.aecsocket.unifiedframework.core.util.color.ColorModifier;
 import com.gitlab.aecsocket.unifiedframework.core.util.color.RGBA;
 import com.gitlab.aecsocket.unifiedframework.core.util.data.Tuple3;
+import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.mojang.serialization.Lifecycle;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.util.HSVLike;
 import net.minecraft.server.v1_16_R3.*;
 import org.bukkit.*;
 import org.bukkit.Material;
@@ -24,7 +24,6 @@ import org.bukkit.block.Block;
 import org.bukkit.craftbukkit.v1_16_R3.block.CraftBlock;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockGrowEvent;
-import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.event.world.TimeSkipEvent;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Required;
@@ -32,7 +31,6 @@ import org.spongepowered.configurate.objectmapping.meta.Required;
 import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicReference;
@@ -198,20 +196,6 @@ public class Seasons implements Feature {
     public Season season(Block block) { return season(block.getLocation()); }
     public Season season(Player player) { return season(player.getLocation()); }
 
-    @Override
-    public void tasks(Scheduler scheduler) {
-        scheduler.run(Task.repeating(ctx -> {
-            ++state.cycleElapsed;
-            long duration = cycleDuration();
-            if (state.cycleElapsed >= duration) {
-                state.cycleElapsed = state.cycleElapsed % duration;
-            }
-            if (state.cycleElapsed < 0) { // can happen if time skips
-                state.cycleElapsed = 0;
-            }
-        }, Utils.MSPT));
-    }
-
     private Field getField(Class<?> clazz, String name) throws NoSuchFieldException {
         Field field = clazz.getDeclaredField(name);
         field.setAccessible(true);
@@ -219,12 +203,24 @@ public class Seasons implements Feature {
     }
 
     @Override
-    public void onDisable() {
+    public void tearDown() {
+        try {
+            @SuppressWarnings("unchecked")
+            var biomeIds = (Int2ObjectMap<ResourceKey<BiomeBase>>) getField(BiomeRegistry.class, "c").get(null);
+            int sizeBefore = biomeIds.size();
+            biomeMappings.values().forEach(map -> map.values().forEach(_id -> {
+                int id = _id;
+                biomeIds.remove(id);
+            }));
+            plugin().log(LogLevel.VERBOSE, "Tore down biome registry: %d -> %d", sizeBefore, biomeIds.size());
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            plugin().log(LogLevel.WARN, e, "Could not tear down season biomes");
+        }
     }
 
     @Override
     @SuppressWarnings("unchecked")
-    public void serverLoad(ServerLoadEvent event) {
+    public void setUp(Scheduler scheduler) {
         try {
             IRegistry<BiomeBase> biomeRegistry = RegistryGeneration.WORLDGEN_BIOME;
             var biomeIds = (Int2ObjectMap<ResourceKey<BiomeBase>>) getField(BiomeRegistry.class, "c").get(null);
@@ -310,7 +306,7 @@ public class Seasons implements Feature {
                             .a(oldBiome.e()) // j, settings generation
                             .a();
 
-                    // b. Register the [new biome] in an empty ID slot
+                    // b. Adds the [new biome] as a custom biome in an empty ID slot
                     for (; biomeIds.containsKey(id); id++);
                     ResourceKey<BiomeBase> key = entry.getKey();
                     MinecraftKey location = key.a();
@@ -319,10 +315,22 @@ public class Seasons implements Feature {
                     biomeIds.put(id, newKey);
                     biomeMappings.get(season).put(biomeRegistry.a(oldBiome), id);
                 }
+                plugin().log(LogLevel.VERBOSE, "Added biomes for season `%s` - last biome ID: %d", season.name, id);
             }
         } catch (NoSuchFieldException | IllegalAccessException e) {
-            e.printStackTrace();
+            plugin().log(LogLevel.WARN, e, "Could not set up season biomes");
         }
+
+        scheduler.run(Task.repeating(ctx -> {
+            ++state.cycleElapsed;
+            long duration = cycleDuration();
+            if (state.cycleElapsed >= duration) {
+                state.cycleElapsed = state.cycleElapsed % duration;
+            }
+            if (state.cycleElapsed < 0) { // can happen if time skips
+                state.cycleElapsed = 0;
+            }
+        }, Utils.MSPT));
     }
 
     @Override

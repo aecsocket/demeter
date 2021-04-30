@@ -215,7 +215,12 @@ public class NaturaCommand extends BaseCommand {
         if (feature == null)
             return;
 
-        feature.state().cycleElapsed = (long) (days * plugin().ticksPerDay());
+        long ticks = (long) (days * plugin().ticksPerDay());
+        feature.state().cycleElapsed = ticks;
+        Locale locale = locale(sender);
+        send(sender, "command.seasons.set",
+                "days", String.format(locale, "%.1f", days),
+                "ticks", String.format(locale, "%d", ticks));
     }
 
     private Component tempComponent(CommandSender sender, double temperature) {

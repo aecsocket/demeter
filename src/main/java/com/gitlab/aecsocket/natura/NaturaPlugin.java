@@ -70,7 +70,7 @@ public final class NaturaPlugin extends BasePlugin {
 
     @Override
     public void onDisable() {
-        features.values().forEach(Feature::onDisable);
+        features.values().forEach(Feature::tearDown);
         save();
     }
 
@@ -85,12 +85,12 @@ public final class NaturaPlugin extends BasePlugin {
             return false;
         int saveInterval = setting(n -> (int) (n.getDouble(30) * 20 * 60), "save_interval");
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::save, saveInterval, saveInterval);
-        features.values().forEach(f -> f.serverLoad(event));
         return true;
     }
 
     @Override
     public boolean load(List<LoggingEntry> result) {
+        features.values().forEach(Feature::tearDown);
         if (super.load(result)) {
             if (setting(n -> n.getBoolean(true), "enable_bstats")) {
                 Metrics metrics = new Metrics(this, BSTATS_PLUGIN_ID);
@@ -120,8 +120,8 @@ public final class NaturaPlugin extends BasePlugin {
                     continue;
                 }
 
-
                 features.put(id, feature);
+                feature.setUp(scheduler);
                 result.add(LoggingEntry.of(LogLevel.VERBOSE, "Loaded feature '%s'", id));
             }
             return true;

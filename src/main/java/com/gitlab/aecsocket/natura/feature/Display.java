@@ -38,7 +38,7 @@ public class Display implements Feature {
     @Override public Object state() { return null; }
 
     @Override
-    public void tasks(Scheduler scheduler) {
+    public void setUp(Scheduler scheduler) {
         scheduler.run(Task.repeating(ctx -> {
             Seasons seasons = plugin().feature(Seasons.ID);
             Temperature temperature = plugin().feature(Temperature.ID);
