@@ -47,6 +47,11 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
+            <groupId>org.spongepowered</groupId>
+            <artifactId>configurate-hocon</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+        <dependency>
             <groupId>co.aikar</groupId>
             <artifactId>acf-paper</artifactId>
             <version>0.5.0-SNAPSHOT</version>
@@ -80,6 +85,10 @@
         <repository>
             <id>dmulloy2-repo</id>
             <url>https://repo.dmulloy2.net/nexus/repository/public/</url>
+        </repository>
+        <repository>
+            <id>spigot-repo</id>
+            <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
         </repository>
     </repositories>
 
@@ -130,12 +139,20 @@
                             <shadedPattern>${project.groupId}.unifiedframework</shadedPattern>
                         </relocation>
                         <relocation>
+                            <pattern>io.leangen.geantyref</pattern>
+                            <shadedPattern>${project.groupId}.geantyref</shadedPattern>
+                        </relocation>
+                        <relocation>
                             <pattern>org.spongepowered.configurate</pattern>
                             <shadedPattern>${project.groupId}.configurate</shadedPattern>
                         </relocation>
                         <relocation>
-                            <pattern>io.leangen.geantyref</pattern>
-                            <shadedPattern>${project.groupId}.geantyref</shadedPattern>
+                            <pattern>com.typesafe.config</pattern>
+                            <shadedPattern>${project.groupId}.config</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>net.kyori.adventure.text.minimessage</pattern>
+                            <shadedPattern>${project.groupId}.minimessage</shadedPattern>
                         </relocation>
                     </relocations>
                 </configuration>

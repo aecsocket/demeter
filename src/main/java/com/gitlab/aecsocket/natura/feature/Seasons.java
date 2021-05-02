@@ -17,10 +17,14 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import net.kyori.adventure.text.Component;
 import net.minecraft.server.v1_16_R3.*;
 import org.bukkit.*;
+import org.bukkit.Chunk;
+import org.bukkit.HeightMap;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.craftbukkit.v1_16_R3.CraftWorld;
 import org.bukkit.craftbukkit.v1_16_R3.block.CraftBlock;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockGrowEvent;
@@ -60,9 +64,14 @@ public class Seasons implements Feature {
         }
     }
 
+    private static BlockFace[] checkDirections = { BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST };
+
     @ConfigSerializable
     public static class Config {
         @Required public double cycleDuration;
+        @Required public long minBlockUpdateInterval;
+        @Required public long maxBlockUpdateInterval;
+        @Required public int blockUpdateMaxY;
         @Required public Map<String, Season> seasons;
         @Required public WorldsConfig<WorldConfig> worlds;
 
@@ -81,10 +90,14 @@ public class Seasons implements Feature {
         public Color color;
         public ColorModifier foliageColor;
         public ColorModifier grassColor;
+        public BiomeBase.Precipitation precipitation;
         public int cycleWeight = 1;
+
         public double fertility = 1;
         public Integer cropSafeY;
         public List<Material> cropProtectiveBlocks = new ArrayList<>();
+        public double freezeChance;
+        public double thawChance;
 
         public Component getLocalizedName(Locale locale) { return plugin().gen(locale, "season." + name); }
 
@@ -169,6 +182,7 @@ public class Seasons implements Feature {
     private final Map<Integer, Biome> biomeIdToBiome = new HashMap<>();
     private final List<Tuple3<Integer, ResourceKey<BiomeBase>, BiomeBase>> customBiomes = new ArrayList<>();
     private final Map<Season, Map<Integer, Integer>> biomeMappings = new HashMap<>();
+    private final Map<World, Map<Long, Long>> chunkUpdates = new HashMap<>();
 
     public Seasons(Config config, State state) {
         this.config = config;
@@ -293,12 +307,17 @@ public class Seasons implements Feature {
                     ((Optional<CaveSound>) fogAdditionsSound.get(oldFog)).ifPresent(newFogBuilder::a);
                     ((Optional<Music>) fogMusic.get(oldFog)).ifPresent(newFogBuilder::a);
                     BiomeFog newFog = newFogBuilder.a();
+                    // field "precipitation": only affects if precipitation is drawn at all
+                    // -> rain/snow (e.g. plains/snowy_taiga) OR nothing (e.g. desert)
+                    // field "temperature": dictated which type of precipitation
+                    // -> rain: >= 0.15
+                    // -> snow: < 0.15
                     BiomeBase newBiome = new BiomeBase.a()
-                            .a(oldBiome.c()) // a, precipitation
+                            .a(season.precipitation == null ? oldBiome.c() : season.precipitation) // a, precipitation
                             .a(oldBiome.t()) // b, geography/category
                             .a(oldBiome.h()) // c, depth
                             .b(oldBiome.j()) // d, scale
-                            .c(oldBiome.k()) // e, temperature
+                            .c(season.precipitation == BiomeBase.Precipitation.SNOW ? 0f : 0.5f) // e, temperature
                             .a(BiomeBase.TemperatureModifier.NONE) // f, temperature modifier (cannot get this from a BiomeBase)
                             .d(oldBiome.getHumidity()) // g, downfall/humidity
                             .a(newFog) // h, special effects/fog (MODIFIED)
@@ -331,6 +350,53 @@ public class Seasons implements Feature {
                 state.cycleElapsed = 0;
             }
         }, Utils.MSPT));
+
+        scheduler.run(Task.repeating(ctx -> {
+            long time = System.currentTimeMillis();
+            for (World world : Bukkit.getWorlds()) {
+                Random rng = ThreadLocalRandom.current();
+                Map<Long, Long> worldChunkUpdates = chunkUpdates.computeIfAbsent(world, __ -> new HashMap<>());
+                for (Chunk chunk : world.getLoadedChunks()) {
+                    long key = chunk.getChunkKey();
+                    long nextUpdate = worldChunkUpdates.computeIfAbsent(key, __ -> time + blockUpdateInterval());
+                    while (time >= nextUpdate) {
+                        nextUpdate += blockUpdateInterval();
+                        int x = (chunk.getX() * 16) + rng.nextInt(16);
+                        int z = (chunk.getZ() * 16) + rng.nextInt(16);
+                        Block block = world.getHighestBlockAt(x, z, HeightMap.WORLD_SURFACE);
+                        if (block.getY() > config.blockUpdateMaxY)
+                            break;
+                        Season season = season(world, block.getBiome());
+                        if (season == null)
+                            break;
+                        if (season.freezeChance > 0 && rng.nextDouble() <= season.freezeChance) {
+                            if (block.getType() == Material.WATER) {
+                                for (BlockFace face : checkDirections) {
+                                    Block relative = block.getRelative(face);
+                                    if (relative.getType().isOccluding()) {
+                                        block.setType(Material.ICE);
+                                        break;
+                                    }
+                                }
+                            } else if (!world.isClearWeather() && block.getType().isOccluding()) {
+                                block.getLocation().add(0, 1, 0).getBlock().setType(Material.SNOW);
+                            }
+                        } else if (season.thawChance > 0 && rng.nextDouble() <= season.thawChance) {
+                            if (block.getType() == Material.SNOW) {
+                                block.setType(Material.AIR);
+                            } else if (block.getType() == Material.ICE) {
+                                block.setType(Material.WATER);
+                            }
+                        }
+                    }
+                    worldChunkUpdates.put(key, nextUpdate);
+                }
+            }
+        }, 500));
+    }
+
+    private long blockUpdateInterval() {
+        return ThreadLocalRandom.current().nextLong(config.minBlockUpdateInterval, config.maxBlockUpdateInterval);
     }
 
     @Override

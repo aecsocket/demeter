@@ -90,6 +90,7 @@ public final class NaturaPlugin extends BasePlugin {
 
     @Override
     public boolean load(List<LoggingEntry> result) {
+        Bukkit.getScheduler().cancelTasks(this);
         features.values().forEach(Feature::tearDown);
         if (super.load(result)) {
             if (setting(n -> n.getBoolean(true), "enable_bstats")) {
