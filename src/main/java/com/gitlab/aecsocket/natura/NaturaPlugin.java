@@ -1,185 +1,175 @@
 package com.gitlab.aecsocket.natura;
 
-import co.aikar.commands.PaperCommandManager;
+import cloud.commandframework.execution.CommandExecutionCoordinator;
+import cloud.commandframework.paper.PaperCommandManager;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.ProtocolManager;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.injector.netty.WirePacket;
 import com.gitlab.aecsocket.natura.feature.*;
-import com.gitlab.aecsocket.unifiedframework.core.util.MapInit;
+import com.gitlab.aecsocket.natura.util.GrassColors;
+import com.gitlab.aecsocket.natura.util.ImageColors;
 import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
 import com.gitlab.aecsocket.unifiedframework.paper.util.plugin.BasePlugin;
 import com.gitlab.aecsocket.unifiedframework.paper.util.plugin.PluginHook;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import net.minecraft.server.v1_16_R3.*;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
+import org.bukkit.block.Biome;
+import org.bukkit.command.CommandSender;
+import org.bukkit.craftbukkit.v1_16_R3.block.CraftBlock;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.server.ServerLoadEvent;
-import org.spongepowered.configurate.BasicConfigurationNode;
-import org.spongepowered.configurate.ConfigurateException;
-import org.spongepowered.configurate.ConfigurationNode;
-import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
 import org.spongepowered.configurate.serialize.SerializationException;
 
-import java.io.File;
+import javax.imageio.ImageIO;
+import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 public final class NaturaPlugin extends BasePlugin {
     public static final int BSTATS_PLUGIN_ID = 10976;
-    public static final String STATE_ROOT = "state";
+    public static final String PATH_FOLIAGE = "foliage.png";
+    public static final String PATH_GRASS = "grass.png";
+
     public static final int TICKS_PER_DAY = 20 * 60 * 20;
+    public static final double HOUR = NaturaPlugin.TICKS_PER_DAY / 24d;
+    public static final double MINUTE = HOUR / 60;
+    public static final double SECOND = MINUTE / 60;
+
     public static final List<String> DEFAULT_RESOURCES = Arrays.asList(
             SETTINGS_FILE,
             LANGUAGE_ROOT + "/default_en-US.conf",
             LANGUAGE_ROOT + "/en-US.conf",
-            Seasons.PATH_FOLIAGE_COLORS
+            PATH_FOLIAGE,
+            PATH_GRASS
     );
-    private static NaturaPlugin instance;
-    public static NaturaPlugin plugin() { return instance; }
 
-    private final Map<String, Feature.Type> featureTypes = Collections.unmodifiableMap(MapInit.of(new HashMap<String, Feature.Type>())
-            .init(Display.ID, Display.TYPE)
-            .init(TimeDilation.ID, TimeDilation.TYPE)
-            .init(Seasons.ID, Seasons.TYPE)
-            .init(Temperature.ID, Temperature.TYPE)
-            /*.init("weather", Weather.FACTORY)
-            .init("wind", Wind.FACTORY)*/
-            .get());
-    private final Map<String, Feature> features = new HashMap<>();
-    private PaperCommandManager commandManager;
+    private final Display display = new Display(this);
+    private final TimeDilation timeDilation = new TimeDilation(this);
+    private final Seasons seasons = new Seasons(this);
+    private final Climate climate = new Climate(this);
+    private final BodyTemperature bodyTemperature = new BodyTemperature(this);
+    private final Weather weather = new Weather(this);
+    private final List<Feature> features = Arrays.asList(display, timeDilation, seasons, climate, bodyTemperature, weather);
+
+    private final Map<Biome, BiomeBase> biomeInternalMap = new HashMap<>();
+    private final Map<Integer, Biome> biomeIdMap = new HashMap<>();
+    private ImageColors foliageColors;
+    private GrassColors grassColors;
+
+    private PaperCommandManager<CommandSender> commandManager;
     private ProtocolManager protocol;
 
     @Override
     public void onEnable() {
         super.onEnable();
-        instance = this;
-        commandManager = new PaperCommandManager(this);
-        NaturaCommand command = new NaturaCommand();
-        command.initManager(commandManager);
-        commandManager.registerCommand(command);
+        try {
+            commandManager = new PaperCommandManager<>(
+                    this,
+                    CommandExecutionCoordinator.simpleCoordinator(),
+                    Function.identity(),
+                    Function.identity()
+            );
+            NaturaCommand command = new NaturaCommand(this);
+            command.register(commandManager);
+        } catch (Exception e) {
+            log(LogLevel.ERROR, e, "Could not initialize command manager - command functionality will be disabled");
+        }
 
         protocol = ProtocolLibrary.getProtocolManager();
-        protocol.addPacketListener(new NaturaPacketAdapter());
+        protocol.addPacketListener(new NaturaPacketAdapter(this));
 
-        Bukkit.getPluginManager().registerEvents(new NaturaListener(), this);
+        Bukkit.getPluginManager().registerEvents(new NaturaListener(this), this);
+
+        for (Biome biome : Biome.values()) {
+            biomeInternalMap.put(biome, CraftBlock.biomeToBiomeBase(RegistryGeneration.WORLDGEN_BIOME, biome));
+        }
+
+        try {
+            IRegistry<BiomeBase> biomeRegistry = RegistryGeneration.WORLDGEN_BIOME;
+            @SuppressWarnings("unchecked")
+            var biomeIds = (Int2ObjectMap<ResourceKey<BiomeBase>>) getField(BiomeRegistry.class, "c").get(null);
+            biomeIds.forEach((id, key) -> biomeIdMap.put(id, CraftBlock.biomeBaseToBiome(biomeRegistry, biomeRegistry.a(key))));
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            log(LogLevel.WARN, e, "Could not set up biome ID mappings");
+        }
     }
 
     @Override
     public void onDisable() {
-        features.values().forEach(Feature::tearDown);
-        save();
+        features.forEach(Feature::stop);
+    }
+
+    private Field getField(Class<?> clazz, String name) throws NoSuchFieldException {
+        Field field = clazz.getDeclaredField(name);
+        field.setAccessible(true);
+        return field;
     }
 
     @Override protected List<String> defaultResources() { return DEFAULT_RESOURCES; }
-    // TODO maybe support some deeper API?
     @Override protected List<PluginHook> hooks() { return Collections.emptyList(); }
 
     @Override
-    @EventHandler
-    public boolean serverLoad(ServerLoadEvent event) {
-        if (!super.serverLoad(event))
-            return false;
-        int saveInterval = setting(n -> (int) (n.getDouble(30) * 20 * 60), "save_interval");
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::save, saveInterval, saveInterval);
-        return true;
-    }
-
-    @Override
     public boolean load(List<LoggingEntry> result) {
-        Bukkit.getScheduler().cancelTasks(this);
-        features.values().forEach(Feature::tearDown);
+        scheduler.cancel();
+        features.forEach(Feature::stop);
         if (super.load(result)) {
             if (setting(n -> n.getBoolean(true), "enable_bstats")) {
                 Metrics metrics = new Metrics(this, BSTATS_PLUGIN_ID);
                 // TODO add some cool charts
             }
 
-            for (var entry : setting(n -> n.childrenMap().entrySet(), "features")) {
-                // Get config
-                String id = entry.getKey().toString();
-                Feature.Type type = featureTypes.get(id);
-                if (type == null) {
-                    result.add(LoggingEntry.of(LogLevel.WARN, "Invalid feature type '%s'", id));
-                    continue;
-                }
+            try {
+                foliageColors = ImageColors.load(ImageIO.read(file(PATH_FOLIAGE)));
+            } catch (IOException e) {
+                result.add(LoggingEntry.of(LogLevel.WARN, e, "Could not load foliage colors from `%s`", PATH_FOLIAGE));
+            }
+            try {
+                grassColors = new GrassColors(ImageColors.load(ImageIO.read(file(PATH_GRASS))));
+            } catch (IOException e) {
+                result.add(LoggingEntry.of(LogLevel.WARN, e, "Could not load grass colors from `%s`", PATH_GRASS));
+            }
 
-                ConfigurationNode state = loadState(id);
-                Feature feature;
+            for (Feature feature : features) {
+                String id = feature.id();
                 try {
-                    feature = type.load(entry.getValue(), state);
-                } catch (SerializationException | RuntimeException e) {
-                    result.add(LoggingEntry.of(LogLevel.WARN, e, "Could not load '%s'", id));
-                    continue;
+                    feature.acceptConfig(setting(n -> n, id));
+                } catch (SerializationException e) {
+                    result.add(LoggingEntry.of(LogLevel.WARN, e, "Could not load config for `%s`", id));
                 }
-
-                if (feature == null) {
-                    result.add(LoggingEntry.of(LogLevel.WARN, "Feature type '%s' created null feature", id));
-                    continue;
-                }
-
-                features.put(id, feature);
-                feature.setUp(scheduler);
-                result.add(LoggingEntry.of(LogLevel.VERBOSE, "Loaded feature '%s'", id));
+                feature.start();
+                result.add(LoggingEntry.of(LogLevel.VERBOSE, "Loaded `%s`", id));
             }
             return true;
         }
         return false;
     }
 
-    public void save() {
-        for (Feature feature : features.values()) {
-            String id = feature.id();
-            try {
-                saveState(id, BasicConfigurationNode.root(configOptions).set(feature.state()));
-            } catch (SerializationException e) {
-                log(LogLevel.WARN, e, "Could not create state for '%s'", id);
-            }
-        }
-        log(LogLevel.VERBOSE, "Saved state");
-    }
+    public Display display() { return display; }
+    public TimeDilation timeDilation() { return timeDilation; }
+    public Seasons seasons() { return seasons; }
+    public Climate climate() { return climate; }
+    public BodyTemperature bodyTemperature() { return bodyTemperature; }
+    public Weather weather() { return weather; }
+    public List<Feature> features() { return features; }
 
-    public Map<String, Feature.Type> featureTypes() { return featureTypes; }
+    public Map<Biome, BiomeBase> internalBiomes() { return biomeInternalMap; }
+    public BiomeBase internalBiome(Biome biome) { return biomeInternalMap.get(biome); }
 
-    public Map<String, Feature> features() { return new HashMap<>(features); }
-    @SuppressWarnings("unchecked")
-    public <T extends Feature> T feature(String id) { return (T) features.get(id); }
-    public void registerFeature(Feature feature) { features.put(feature.id(), feature); }
-    public void unregisterFeature(String id) { features.remove(id); }
+    public Map<Integer, Biome> biomeIds() { return biomeIdMap; }
+    public Biome biomeById(int id) { return biomeIdMap.get(id); }
 
-    public PaperCommandManager commandManager() { return commandManager; }
+    public ImageColors foliageColors() { return foliageColors; }
+    public GrassColors grassColors() { return grassColors; }
+
+    public PaperCommandManager<CommandSender> commandManager() { return commandManager; }
     public ProtocolManager protocol() { return protocol; }
-
-    public File stateFolder() { return new File(getDataFolder(), STATE_ROOT); }
-    public File stateFile(String id) { return new File(stateFolder(), id + ".conf"); }
-    public HoconConfigurationLoader stateLoader(String id) {
-        return HoconConfigurationLoader.builder()
-                .file(stateFile(id))
-                .defaultOptions(configOptions)
-                .build();
-    }
-    public ConfigurationNode loadState(String id) {
-        File stateFile = stateFile(id);
-        if (!stateFile.exists()) {
-            return BasicConfigurationNode.root(configOptions);
-        }
-        try {
-            return stateLoader(id).load();
-        } catch (ConfigurateException e) {
-            log(LogLevel.WARN, e, "Could not load state for '%s'", id);
-            return null;
-        }
-    }
-    public void saveState(String id, ConfigurationNode state) {
-        try {
-            stateLoader(id).save(state);
-        } catch (ConfigurateException e) {
-            log(LogLevel.WARN, e, "Could not save state for '%s'", id);
-        }
-    }
 
     public void sendPacket(PacketContainer packet, Player target, boolean wire) {
         try {
@@ -206,7 +196,4 @@ public final class NaturaPlugin extends BasePlugin {
     public void sendPacket(Player target, PacketType type, Consumer<PacketContainer> builder) {
         sendPacket(target, type, false, builder);
     }
-
-    public double dayLengthMultiplier() { return setting(n -> n.getDouble(1), "day_length_multiplier"); }
-    public long ticksPerDay() { return (long) (TICKS_PER_DAY * dayLengthMultiplier()); }
 }

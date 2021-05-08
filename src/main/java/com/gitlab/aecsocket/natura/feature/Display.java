@@ -1,78 +1,95 @@
 package com.gitlab.aecsocket.natura.feature;
 
+import com.gitlab.aecsocket.natura.NaturaPlugin;
+import com.gitlab.aecsocket.natura.util.WorldConfigManager;
 import com.gitlab.aecsocket.unifiedframework.core.parsing.math.MathExpressionNode;
-import com.gitlab.aecsocket.unifiedframework.core.scheduler.Scheduler;
 import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
-import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
-import org.spongepowered.configurate.objectmapping.meta.Required;
+import org.spongepowered.configurate.serialize.SerializationException;
 
 import java.util.Locale;
 
-import static com.gitlab.aecsocket.natura.NaturaPlugin.plugin;
-
 public class Display implements Feature {
     public static final String ID = "display";
-    public static final Type TYPE = (config, state) -> new Display(
-            config.get(Config.class)
-    );
 
     @ConfigSerializable
-    public static class Config {
-        @Required public String temperatureFormat;
-        @Required public MathExpressionNode temperatureFunction;
+    public static final class Config {
+        public boolean enabled;
+        public long updateInterval = 1000;
+        public WorldConfigManager<WorldConfig> worlds;
+
+        public String temperatureFormat = "%.2f";
+        public MathExpressionNode temperatureExpression;
+
+        public String humidityFormat = "%.2f";
+        public MathExpressionNode humidityExpression;
+
+        public String bodyTemperatureFormat = "%.2f";
+        public MathExpressionNode bodyTemperatureExpression;
+        public boolean calculateTarget;
     }
 
+    @ConfigSerializable
+    public static final class WorldConfig {
+        private static final WorldConfig empty = new WorldConfig();
+
+        public boolean enabled;
+    }
+
+    private final NaturaPlugin plugin;
     private Config config;
 
-    public Display(Config config) {
-        this.config = config;
+    public Display(NaturaPlugin plugin) {
+        this.plugin = plugin;
     }
+
+    public NaturaPlugin plugin() { return plugin; }
+    public Config config() { return config; }
 
     @Override public String id() { return ID; }
 
-    public Config config() { return config; }
-    @Override public Object state() { return null; }
+    @Override
+    public void acceptConfig(ConfigurationNode config) throws SerializationException {
+        this.config = config.get(Config.class);
+    }
+
+    private String value(double value, Locale locale, String format, MathExpressionNode expr) {
+        return String.format(locale, format, expr == null ? value : expr.set("v", value).value());
+    }
 
     @Override
-    public void setUp(Scheduler scheduler) {
-        scheduler.run(Task.repeating(ctx -> {
-            Seasons seasons = plugin().feature(Seasons.ID);
-            Temperature temperature = plugin().feature(Temperature.ID);
+    public void start() {
+        if (!config.enabled) return;
+        plugin.scheduler().run(Task.repeating(ctx -> {
             for (Player player : Bukkit.getOnlinePlayers()) {
+                World world = player.getWorld();
+                if (!player.hasPermission("natura.feature.display")) continue;
+                if (!config.worlds.config(world).orElse(WorldConfig.empty).enabled) continue;
+
+                Block block = player.getLocation().getBlock();
+                Climate climate = plugin.climate();
+                Seasons seasons = plugin.seasons();
+                Seasons.Season season = seasons.season(world, block.getBiome());
+                BodyTemperature bodyTemp = plugin.bodyTemperature();
+
                 Locale locale = player.locale();
-
-                Component textSeason;
-                if (seasons == null)
-                    textSeason = plugin().gen(locale, "display.season.disabled");
-                else {
-                    Seasons.Season season = seasons.season(player);
-                    if (season == null)
-                        textSeason = plugin().gen(locale, "display.season.no_season");
-                    else
-                        textSeason = season.getLocalizedName(locale);
-                }
-
-                Component textTemperature;
-                if (temperature == null)
-                    textTemperature = plugin().gen(locale, "display.temperature.disabled");
-                else {
-                    double current = temperature.currentTemperature(player);
-                    config.temperatureFunction.setVariable("x", current);
-                    textTemperature = plugin().gen(locale, "display.temperature.temperature",
-                            "temperature", String.format(locale, config.temperatureFormat, config.temperatureFunction.value()));
-                }
-
-                long time = (player.getWorld().getTime() + 6000) % 24000;
-                player.sendActionBar(plugin().gen(locale, "display.action_bar",
-                        "hours", String.format("%02d", time / 1000),
-                        "minutes", String.format("%02d", (int) (((time % 1000) / 1000d) * 60)),
-                        "season", textSeason,
-                        "temperature", textTemperature));
+                long time = (world.getTime() + 6000) % NaturaPlugin.TICKS_PER_DAY;
+                player.sendActionBar(plugin.gen(locale, "display.action_bar",
+                        "hours", String.format("%02d", (int) (time / NaturaPlugin.HOUR) /* % 24 */),
+                        "minutes", String.format("%02d", (int) ((time / NaturaPlugin.MINUTE) % 60)),
+                        "seconds", String.format("%02d", (int) ((time / NaturaPlugin.SECOND) % 60)),
+                        "temperature", value(climate.temperature(block), locale, config.temperatureFormat, config.temperatureExpression),
+                        "humidity", value(climate.humidity(block), locale, config.humidityFormat, config.humidityExpression),
+                        "season", season == null ? plugin.gen(locale, "display.season.none") : plugin.gen(locale, "display.season.season",
+                                "season", season.localizedName(plugin, locale)),
+                        "current_body_temperature", value(bodyTemp.current(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression),
+                        "target_body_temperature", config.calculateTarget ? value(bodyTemp.target(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression) : ""));
             }
-        }, Utils.MSPT));
+        }, config.updateInterval));
     }
 }

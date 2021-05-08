@@ -1,118 +1,126 @@
 package com.gitlab.aecsocket.natura;
 
-import co.aikar.commands.BaseCommand;
-import co.aikar.commands.InvalidCommandArgument;
-import co.aikar.commands.PaperCommandManager;
-import co.aikar.commands.annotation.*;
-import co.aikar.commands.annotation.Optional;
-import com.gitlab.aecsocket.natura.feature.Feature;
+import cloud.commandframework.ArgumentDescription;
+import cloud.commandframework.Command;
+import cloud.commandframework.arguments.standard.EnumArgument;
+import cloud.commandframework.bukkit.arguments.selector.MultiplePlayerSelector;
+import cloud.commandframework.bukkit.parsers.WorldArgument;
+import cloud.commandframework.bukkit.parsers.location.LocationArgument;
+import cloud.commandframework.bukkit.parsers.selector.MultiplePlayerSelectorArgument;
+import cloud.commandframework.captions.FactoryDelegatingCaptionRegistry;
+import cloud.commandframework.context.CommandContext;
+import cloud.commandframework.paper.PaperCommandManager;
+import com.gitlab.aecsocket.natura.feature.BodyTemperature;
+import com.gitlab.aecsocket.natura.feature.Climate;
 import com.gitlab.aecsocket.natura.feature.Seasons;
-import com.gitlab.aecsocket.natura.feature.Temperature;
+import com.gitlab.aecsocket.natura.util.SeasonArgument;
 import com.gitlab.aecsocket.natura.util.Timeline;
 import com.gitlab.aecsocket.unifiedframework.core.util.TextUtils;
 import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
+import io.leangen.geantyref.TypeToken;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.TextColor;
+import net.minecraft.server.v1_16_R3.BiomeBase;
 import org.bukkit.*;
 import org.bukkit.block.Biome;
+import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.util.StringUtil;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
+import java.util.function.BiFunction;
 
-import static com.gitlab.aecsocket.natura.NaturaPlugin.plugin;
-
-@CommandAlias("natura|nat")
-public class NaturaCommand extends BaseCommand {
+public class NaturaCommand {
     public static final String SYMBOL_THIS = ".";
 
-    private Locale locale(CommandSender sender) { return plugin().locale(sender); }
+    private final NaturaPlugin plugin;
+
+    public NaturaCommand(NaturaPlugin plugin) {
+        this.plugin = plugin;
+    }
+
+    public NaturaPlugin plugin() { return plugin; }
+
+    private Locale locale(CommandSender sender) { return plugin.locale(sender); }
 
     private Component gen(CommandSender sender, String key, Object... args) {
-        return plugin().gen(locale(sender), key, args);
+        return plugin.gen(locale(sender), key, args);
     }
 
     private void send(CommandSender sender, String key, Object... args) {
         sender.sendMessage(gen(sender, key, args));
     }
 
-    protected void initManager(PaperCommandManager commandManager) {
-        commandManager.enableUnstableAPI("help");
-        commandManager.getCommandCompletions().registerCompletion("worlds", ctx -> {
-            List<String> result = new ArrayList<>();
-            result.add(NaturaCommand.SYMBOL_THIS);
-            result.addAll(Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList()));
-            return result;
-        });
-        commandManager.getCommandContexts().registerIssuerAwareContext(World.class, ctx -> {
-            String arg = ctx.popFirstArg();
-            CommandSender sender = ctx.getSender();
-            if (arg == null)
-                return null;
-            if (NaturaCommand.SYMBOL_THIS.equals(arg)) {
-                if (ctx.getPlayer() == null) {
-                    send(sender, "command.error.sender_using_this");
-                    throw new InvalidCommandArgument(false);
-                }
-                return ctx.getPlayer().getWorld();
-            }
+    protected void register(PaperCommandManager<CommandSender> manager) {
+        manager.registerBrigadier();
+        manager.registerAsynchronousCompletions();
+        manager.getParserRegistry().registerParserSupplier(TypeToken.get(Seasons.class), params -> new SeasonArgument.SeasonParser<>(plugin));
+        FactoryDelegatingCaptionRegistry<CommandSender> captions = (FactoryDelegatingCaptionRegistry<CommandSender>) manager.getCaptionRegistry();
+        captions.registerMessageFactory(SeasonArgument.ARGUMENT_PARSE_FAILURE_SEASON, (cap, sender) -> "'{input}' is not a valid season");
 
-            World world = Bukkit.getWorld(arg);
-            if (world == null) {
-                send(sender, "command.error.invalid_world",
-                        "world", arg);
-                throw new InvalidCommandArgument(false);
-            }
-            return world;
-        });
-        commandManager.getCommandCompletions().registerCompletion("biomes", ctx -> {
-            List<String> result = new ArrayList<>();
-            result.add(NaturaCommand.SYMBOL_THIS);
-            Registry.BIOME.forEach(biome -> result.add(biome.getKey().value()));
-            return result;
-        });
-        commandManager.getCommandContexts().registerIssuerAwareContext(Biome.class, ctx -> {
-            String arg = ctx.popFirstArg();
-            CommandSender sender = ctx.getSender();
-            if (arg == null)
-                return null;
-            if (NaturaCommand.SYMBOL_THIS.equals(arg)) {
-                if (ctx.getPlayer() == null) {
-                    send(sender, "command.error.sender_using_this");
-                    throw new InvalidCommandArgument(false);
-                }
-                return ctx.getPlayer().getLocation().getBlock().getBiome();
-            }
+        BiFunction<CommandContext<CommandSender>, String, List<String>> suggestSeasons = (ctx, arg) ->
+                StringUtil.copyPartialMatches(arg, plugin.seasons().config().seasons.keySet(), new ArrayList<>());
 
-            NamespacedKey key = NamespacedKey.minecraft(arg);
-            Biome biome = Registry.BIOME.get(key);
-            if (biome == null) {
-                send(sender, "command.error.invalid_biome",
-                        "biome", arg);
-                throw new InvalidCommandArgument(false);
-            }
-            return biome;
-        });
+        Command.Builder<CommandSender> cmdRoot = manager.commandBuilder("natura", ArgumentDescription.of("Natura's main command."), "nat");
+        Command.Builder<CommandSender> cmdClimate = cmdRoot
+                .literal("climate", ArgumentDescription.of("Commands involving the climate feature."));
+        Command.Builder<CommandSender> cmdSeasons = cmdRoot
+                .literal("seasons", ArgumentDescription.of("Commands involving the seasons feature."));
+        Command.Builder<CommandSender> cmdBodyTemperature = cmdRoot
+                .literal("body-temperature", ArgumentDescription.of("Commands involving the body temperature feature."));
+
+        manager.command(cmdRoot
+                .literal("reload", ArgumentDescription.of("Reloads all plugin data."))
+                .handler(this::reload)
+        );
+        manager.command(cmdRoot
+                .literal("biomes", ArgumentDescription.of("Dumps information about biomes."))
+                .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to dump information about."))
+                .handler(this::biomes)
+        );
+
+        manager.command(cmdClimate
+                .literal("get", ArgumentDescription.of("Gets climate information about a block."))
+                .argument(LocationArgument.optional("location"))
+                .handler(this::climateGet)
+        );
+
+        manager.command(cmdSeasons
+                .literal("get", ArgumentDescription.of("Gets the season."))
+                .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the season for."))
+                .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to get the season for."))
+                .handler(this::seasonsGet)
+        );
+        manager.command(cmdSeasons
+                .literal("set", ArgumentDescription.of("Sets the time of a world in accordance with a specific season."))
+                .argument(SeasonArgument.<CommandSender>newBuilder("season", plugin).withSuggestionsProvider(suggestSeasons).build())
+                .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the season for."))
+                .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to get the season for."))
+                .handler(this::seasonsSet)
+        );
+        manager.command(cmdSeasons
+                .literal("timeline", ArgumentDescription.of("Displays a timeline of seasons."))
+                .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the season for."))
+                .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to get the season for."))
+                .handler(this::seasonsTimeline)
+        );
+
+        manager.command(cmdBodyTemperature
+                .literal("factors", ArgumentDescription.of("Shows the factors involved in calculating body temperature."))
+                .argument(MultiplePlayerSelectorArgument.optional("targets"), ArgumentDescription.of("The player(s) to get the factors for."))
+                .handler(this::bodyTemperatureFactors)
+        );
     }
 
-    @Subcommand("reload")
-    @Description("Reloads all plugin data.")
-    @CommandPermission("natura.command.reload")
-    @CommandCompletion("[save]")
-    @Syntax("[save]")
-    public void reload(CommandSender sender, @Default(value = "true") boolean save) {
-        send(sender, "command.save.start");
-        if (save) {
-            plugin().save();
-        }
+    private void reload(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
         send(sender, "command.reload.start");
         AtomicInteger warnings = new AtomicInteger(0);
         List<LoggingEntry> result = new ArrayList<>();
-        plugin().load(result);
-        plugin().log(result).forEach(entry -> {
+        plugin.load(result);
+        plugin.log(result).forEach(entry -> {
             if (entry.level().level() >= LogLevel.WARN.level()) {
                 warnings.incrementAndGet();
                 for (String line : TextUtils.lines(entry.infoBasic())) {
@@ -128,138 +136,197 @@ public class NaturaCommand extends BaseCommand {
                     "warnings", Integer.toString(warnings.get()));
     }
 
-    @Subcommand("save")
-    @Description("Reloads all plugin data.")
-    @CommandPermission("natura.command.reload")
-    @CommandCompletion("[save]")
-    @Syntax("[save]")
-    public void save(CommandSender sender) {
-        send(sender, "command.save.start");
-        plugin().save();
-        send(sender, "command.save.stop");
-    }
+    public void biomes(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        Biome biome = (Biome) ctx.getOptional("biome").orElse(null);
+        Map<Biome, BiomeBase> toDump = biome == null ? plugin.internalBiomes() : Collections.singletonMap(biome, plugin.internalBiome(biome));
 
-    private <T extends Feature> T feature(CommandSender sender, String id) {
-        T feature = plugin().feature(id);
-        if (feature == null) {
-            send(sender, "command.error.feature_disabled");
+        for (var entry : toDump.entrySet()) {
+            Biome key = entry.getKey();
+            BiomeBase value = entry.getValue();
+            if (value == null) {
+                send(sender, "command.biomes.no_value",
+                        "key", key.getKey().toString());
+            } else {
+                send(sender, "command.biomes.value",
+                        "key", key.getKey().toString(),
+                        "enum", key.name(),
+                        "temperature", Objects.toString(value.k()),
+                        "humidity", Objects.toString(value.getHumidity()));
+            }
         }
-        return feature;
     }
 
-    @Subcommand("seasons timeline")
-    @Description("Displays a timeline of seasons in a specified world.")
-    @CommandPermission("natura.command.seasons.timeline")
-    @CommandCompletion("@worlds @biomes")
-    @Syntax("[world|.] [biome|.]")
-    public void seasonsTimeline(CommandSender sender, @Optional World world, @Optional Biome biome) {
-        Seasons feature = feature(sender, Seasons.ID);
-        if (feature == null)
+    private void climateGet(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        Player player = sender instanceof Player ? ((Player) sender) : null;
+        Location location = ctx.getOrDefault("location", player == null ? null : player.getLocation());
+        if (location == null) {
+            send(sender, "command.error.no_location");
             return;
+        }
+
+        Block block = location.getBlock();
+        Climate climate = plugin.climate();
+        send(sender, "command.climate.get",
+                "temperature", String.format("%.03f", climate.temperature(block)),
+                "humidity", String.format("%.03f", climate.humidity(block)));
+    }
+
+    private void seasonsGet(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        Player player = sender instanceof Player ? ((Player) sender) : null;
+        World world = ctx.getOrDefault("world", player == null ? null : player.getWorld());
+        Biome biome = ctx.getOrDefault("biome", player == null ? null : player.getLocation().getBlock().getBiome());
+        if (world == null) {
+            send(sender, "command.error.no_world");
+            return;
+        }
+        if (biome == null) {
+            send(sender, "command.error.no_biome");
+            return;
+        }
+
+        Seasons seasons = plugin.seasons();
+        Seasons.BiomeConfig biomeConfig = seasons.world(world).biome(biome);
+        Seasons.Season season = biomeConfig.season(seasons.time(world));
+        Locale locale = locale(sender);
+        if (season == null)
+            send(sender, "command.seasons.get.none",
+                    "world", world.getName(),
+                    "biome", biome.getKey().toString());
+        else {
+            long duration = biomeConfig.durations.get(season);
+            long time = seasons.time(world) % duration;
+            send(sender, "command.seasons.get.season",
+                    "world", world.getName(),
+                    "biome", biome.getKey().toString(),
+                    "season", season.localizedName(plugin, locale),
+                    "progress_ticks", Long.toString(time),
+                    "duration_ticks", Long.toString(duration),
+                    "progress_percent", String.format(locale, "%.1f", ((double) time / duration) * 100));
+        }
+    }
+
+    private void seasonsSet(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        Player player = sender instanceof Player ? ((Player) sender) : null;
+        Seasons.Season season = ctx.get("season");
+        World world = ctx.getOrDefault("world", player == null ? null : player.getWorld());
+        Biome biome = ctx.getOrDefault("biome", player == null ? null : player.getLocation().getBlock().getBiome());
+        if (world == null) {
+            send(sender, "command.error.no_world");
+            return;
+        }
+        if (biome == null) {
+            send(sender, "command.error.no_biome");
+            return;
+        }
+
+        Seasons seasons = plugin.seasons();
+        Seasons.WorldConfig worldConfig = seasons.world(world);
+        Seasons.BiomeConfig biomeConfig = worldConfig.biome(biome);
+
+        long startsAt = biomeConfig.startsAt(season);
+        if (startsAt == -1) {
+            send(sender, "command.error.unconfigured_season");
+            return;
+        }
+
+        long time = world.getFullTime();
+        long cycleLength = worldConfig.timeCycleLength;
+        long cycles = time / cycleLength;
+        world.setFullTime((cycleLength * cycles) + biomeConfig.startsAt(season));
 
         Locale locale = locale(sender);
+        send(sender, "command.seasons.set",
+                "world", world.getName(),
+                "season", season.localizedName(plugin, locale),
+                "new_time", String.format(locale, "%,d", world.getFullTime()),
+                "old_time", String.format(locale, "%,d", time));
+    }
+
+    private void seasonsTimeline(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        World world = (World) ctx.getOptional("world").orElse(null);
+        Biome biome = (Biome) ctx.getOptional("biome").orElse(null);
+        Collection<World> allWorlds = world == null ? Bukkit.getWorlds() : Collections.singleton(world);
+
+        Seasons seasons = plugin.seasons();
+        Locale locale = locale(sender);
         int length = 50;
-        double cycleProgress = feature.cycleProgress();
-        send(sender, "command.seasons.timeline.header",
-                "timeline", new Timeline(length)
-                        .complete(cycleProgress)
-                        .build(),
-                "elapsed", String.format(locale, "%.1f", feature.state().cycleElapsed / (double) plugin().ticksPerDay()),
-                "total", String.format(locale, "%.1f", feature.config().cycleDuration),
-                "percent", String.format(locale, "%.1f", feature.cycleProgress() * 100)
-        );
 
-        Map<World, List<Seasons.BiomeData>> timelines = new HashMap<>();
-        for (World target : world == null ? Bukkit.getWorlds() : Collections.singletonList(world)) {
-            feature.config().config(target).ifPresent(config -> {
-                List<Seasons.BiomeData> toAdd = new ArrayList<>();
-                if (biome == null)
-                    toAdd = config.biomes;
-                else
-                    config.biomeData(biome).ifPresent(toAdd::add);
-
-                if (toAdd.size() > 0) {
-                    timelines.computeIfAbsent(target, __ -> new ArrayList<>()).addAll(toAdd);
-                }
-            });
-        }
-
-        for (var entry : timelines.entrySet()) {
+        for (World tWorld : allWorlds) {
+            Seasons.WorldConfig cfg = seasons.world(tWorld);
+            long elapsed = seasons.time(tWorld);
+            long cycle = cfg.timeCycleLength;
+            double progress = (double) elapsed / cycle;
             send(sender, "command.seasons.timeline.world",
-                    "world", entry.getKey().getName());
-            for (Seasons.BiomeData timeline : entry.getValue()) {
-                Timeline display = new Timeline(length)
-                        .complete(cycleProgress);
-                for (Seasons.Season season : timeline.mappedSeasons) {
-                    Color color = season.color;
-                    display.addSections(new Timeline.Section(
-                            TextColor.color(color.getRed(), color.getGreen(), color.getBlue()),
-                            season.cycleWeight / (double) timeline.totalWeight
+                    "timeline", new Timeline(length)
+                            .complete(progress)
+                            .build(),
+                    "world", tWorld.getName(),
+                    "elapsed", String.format(locale, "%.1f", (double) elapsed / NaturaPlugin.TICKS_PER_DAY),
+                    "cycle", String.format(locale, "%.1f", (double) cycle / NaturaPlugin.TICKS_PER_DAY),
+                    "percent", String.format(locale, "%.1f", progress * 100)
+            );
+
+            for (Seasons.BiomeConfig cfg2 : biome == null ? cfg.biomes : Collections.singleton(cfg.biome(biome))) {
+                Timeline timeline = new Timeline(length)
+                        .complete(progress);
+                for (Seasons.Season season : cfg2.seasons) {
+                    timeline.addSections(new Timeline.Section(
+                            season.color, (double) cfg2.durations.get(season) / cycle
                     ));
                 }
-                send(sender, "command.seasons.timeline.season",
-                        "timeline", display.build(),
-                        "season", timeline.currentSeason(cycleProgress).getLocalizedName(locale)
+                send(sender, "command.seasons.timeline.entry",
+                        "timeline", timeline.build(),
+                        "season", cfg2.season(elapsed).localizedName(plugin, locale)
                 );
             }
         }
     }
 
-    @Subcommand("seasons set")
-    @Description("Sets the current season clock.")
-    @CommandPermission("natura.command.seasons.set")
-    @CommandCompletion("[days]")
-    @Syntax("[days]")
-    public void seasonsSet(CommandSender sender, double days) {
-        Seasons feature = feature(sender, Seasons.ID);
-        if (feature == null)
-            return;
-
-        long ticks = (long) (days * plugin().ticksPerDay());
-        feature.state().cycleElapsed = ticks;
-        Locale locale = locale(sender);
-        send(sender, "command.seasons.set",
-                "days", String.format(locale, "%.1f", days),
-                "ticks", String.format(locale, "%d", ticks));
+    private Component temp(CommandSender sender, double temperature) {
+        String formatted = String.format("%.02f", temperature);
+        if (temperature > 0)
+            return gen(sender, "temperature.positive",
+                    "temperature", formatted);
+        if (temperature < 0)
+            return gen(sender, "temperature.negative",
+                    "temperature", formatted);
+        return gen(sender, "temperature.neutral",
+                "temperature", formatted);
     }
 
-    private Component tempComponent(CommandSender sender, double temperature) {
-        return gen(sender, "command.temperature.temperature." + (temperature == 0 ? "neutral" : temperature > 0 ? "hot" : "cold"),
-                "temperature", String.format(locale(sender), "%.2f", temperature));
-    }
-
-    @Subcommand("temperature factors")
-    @Description("Breaks down the factors involved in getting the temperature of a player.")
-    @CommandPermission("natura.command.temperature.factors")
-    @CommandCompletion("@players")
-    @Syntax("[player]")
-    public void temperatureFactors(CommandSender sender, @Optional Player player) {
-        Temperature feature = feature(sender, Temperature.ID);
-        if (feature == null)
+    private void bodyTemperatureFactors(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        MultiplePlayerSelector selector = ctx.getOrDefault("targets", null);
+        List<Player> targets = selector == null
+                ? sender instanceof Player ? Collections.singletonList((Player) sender) : null
+                : selector.getPlayers();
+        if (targets == null) {
+            send(sender, "command.error.no_players");
             return;
+        }
 
-        if (player == null) {
-            if (sender instanceof Player) {
-                player = (Player) sender;
-            } else {
-                send(sender, "command.error.unspecified_player");
-                return;
+        BodyTemperature bodyTemperature = plugin.bodyTemperature();
+        for (Player player : targets) {
+            send(sender, "command.body_temperature.factors.header",
+                    "player", player.displayName(),
+                    "current", temp(sender, bodyTemperature.current(player)),
+                    "target", temp(sender, bodyTemperature.target(player)));
+
+            double value = 0;
+            for (BodyTemperature.Factor factor : bodyTemperature.factors()) {
+                double old = value;
+                value = factor.apply(bodyTemperature, player, value);
+                send(sender, "command.body_temperature.factors.entry",
+                        "class", factor.getClass().getSimpleName(),
+                        "old", temp(sender, old),
+                        "new", temp(sender, value),
+                        "delta", temp(sender, value - old));
             }
         }
-
-        Locale locale = locale(sender);
-        double temperature = feature.baseTemperature(player.getLocation().getBlock());
-        send(sender, "command.temperature.factors.base",
-                "temperature", tempComponent(sender, temperature));
-        for (Temperature.Factor factor : feature.factors()) {
-            double next = factor.apply(feature, player, temperature);
-            double delta = next - temperature;
-            send(sender, "command.temperature.factors.entry",
-                    "type", factor.getClass().getSimpleName(),
-                    "temperature", tempComponent(sender, delta));
-            temperature = next;
-        }
-        send(sender, "command.temperature.factors.total",
-                "temperature", tempComponent(sender, temperature));
     }
 }

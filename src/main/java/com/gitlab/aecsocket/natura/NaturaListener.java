@@ -1,22 +1,27 @@
 package com.gitlab.aecsocket.natura;
 
+import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import com.gitlab.aecsocket.natura.feature.Feature;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockGrowEvent;
-import org.bukkit.event.world.TimeSkipEvent;
 
 import java.util.function.Consumer;
 
-import static com.gitlab.aecsocket.natura.NaturaPlugin.plugin;
-
 public class NaturaListener implements Listener {
-    private void pass(Consumer<Feature> function) {
-        for (Feature feature : plugin().features().values()) {
-            function.accept(feature);
-        }
+    private final NaturaPlugin plugin;
+
+    public NaturaListener(NaturaPlugin plugin) {
+        this.plugin = plugin;
     }
 
-    @EventHandler public void onEvent(BlockGrowEvent event) { pass(f -> f.blockGrow(event)); }
-    @EventHandler public void onEvent(TimeSkipEvent event) { pass(f -> f.timeSkip(event)); }
+    public NaturaPlugin plugin() { return plugin; }
+
+    private void pass(Consumer<Feature> function) {
+        for (Feature feature : plugin.features())
+            function.accept(feature);
+    }
+
+    @EventHandler private void onEvent(PlayerPostRespawnEvent event) { pass(f -> f.respawn(event)); }
+    @EventHandler private void onEvent(BlockGrowEvent event) { pass(f -> f.blockGrow(event)); }
 }
