@@ -3,12 +3,14 @@ package com.gitlab.aecsocket.natura;
 import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.Command;
 import cloud.commandframework.arguments.standard.EnumArgument;
+import cloud.commandframework.arguments.standard.StringArgument;
 import cloud.commandframework.bukkit.arguments.selector.MultiplePlayerSelector;
 import cloud.commandframework.bukkit.parsers.WorldArgument;
 import cloud.commandframework.bukkit.parsers.location.LocationArgument;
 import cloud.commandframework.bukkit.parsers.selector.MultiplePlayerSelectorArgument;
 import cloud.commandframework.captions.FactoryDelegatingCaptionRegistry;
 import cloud.commandframework.context.CommandContext;
+import cloud.commandframework.minecraft.extras.MinecraftHelp;
 import cloud.commandframework.paper.PaperCommandManager;
 import com.gitlab.aecsocket.natura.feature.BodyTemperature;
 import com.gitlab.aecsocket.natura.feature.Climate;
@@ -19,6 +21,7 @@ import com.gitlab.aecsocket.unifiedframework.core.util.TextUtils;
 import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
 import io.leangen.geantyref.TypeToken;
+import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import net.kyori.adventure.text.Component;
 import net.minecraft.server.v1_16_R3.BiomeBase;
 import org.bukkit.*;
@@ -26,6 +29,7 @@ import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.util.StringUtil;
 
 import java.util.*;
@@ -36,6 +40,7 @@ public class NaturaCommand {
     public static final String SYMBOL_THIS = ".";
 
     private final NaturaPlugin plugin;
+    private MinecraftHelp<CommandSender> help;
 
     public NaturaCommand(NaturaPlugin plugin) {
         this.plugin = plugin;
@@ -60,6 +65,9 @@ public class NaturaCommand {
         FactoryDelegatingCaptionRegistry<CommandSender> captions = (FactoryDelegatingCaptionRegistry<CommandSender>) manager.getCaptionRegistry();
         captions.registerMessageFactory(SeasonArgument.ARGUMENT_PARSE_FAILURE_SEASON, (cap, sender) -> "'{input}' is not a valid season");
 
+        BukkitAudiences audiences = BukkitAudiences.create(plugin);
+        help = new MinecraftHelp<>("/natura help", audiences::sender, manager);
+
         BiFunction<CommandContext<CommandSender>, String, List<String>> suggestSeasons = (ctx, arg) ->
                 StringUtil.copyPartialMatches(arg, plugin.seasons().config().seasons.keySet(), new ArrayList<>());
 
@@ -72,18 +80,30 @@ public class NaturaCommand {
                 .literal("body-temperature", ArgumentDescription.of("Commands involving the body temperature feature."));
 
         manager.command(cmdRoot
+                .literal("help")
+                .argument(StringArgument.optional("query", StringArgument.StringMode.GREEDY))
+                .handler(ctx -> help.queryCommands(ctx.getOrDefault("query", ""), ctx.getSender()))
+        );
+        manager.command(cmdRoot
+                .literal("version", ArgumentDescription.of("Gets version information."))
+                .handler(this::version)
+        );
+        manager.command(cmdRoot
                 .literal("reload", ArgumentDescription.of("Reloads all plugin data."))
+                .permission("natura.command.reload")
                 .handler(this::reload)
         );
         manager.command(cmdRoot
                 .literal("biomes", ArgumentDescription.of("Dumps information about biomes."))
                 .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to dump information about."))
+                .permission("natura.command.biomes")
                 .handler(this::biomes)
         );
 
         manager.command(cmdClimate
                 .literal("get", ArgumentDescription.of("Gets climate information about a block."))
                 .argument(LocationArgument.optional("location"))
+                .permission("natura.command.climate.get")
                 .handler(this::climateGet)
         );
 
@@ -91,6 +111,7 @@ public class NaturaCommand {
                 .literal("get", ArgumentDescription.of("Gets the season."))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the season for."))
                 .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to get the season for."))
+                .permission("natura.command.seasons.get")
                 .handler(this::seasonsGet)
         );
         manager.command(cmdSeasons
@@ -98,20 +119,32 @@ public class NaturaCommand {
                 .argument(SeasonArgument.<CommandSender>newBuilder("season", plugin).withSuggestionsProvider(suggestSeasons).build())
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the season for."))
                 .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to get the season for."))
+                .permission("natura.command.seasons.set")
                 .handler(this::seasonsSet)
         );
         manager.command(cmdSeasons
                 .literal("timeline", ArgumentDescription.of("Displays a timeline of seasons."))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the season for."))
                 .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to get the season for."))
+                .permission("natura.command.seasons.timeline")
                 .handler(this::seasonsTimeline)
         );
 
         manager.command(cmdBodyTemperature
                 .literal("factors", ArgumentDescription.of("Shows the factors involved in calculating body temperature."))
                 .argument(MultiplePlayerSelectorArgument.optional("targets"), ArgumentDescription.of("The player(s) to get the factors for."))
+                .permission("natura.command.body-temperature.factors")
                 .handler(this::bodyTemperatureFactors)
         );
+    }
+
+    private void version(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        PluginDescriptionFile desc = plugin.getDescription();
+        send(sender, "command.version",
+                "name", desc.getName(),
+                "version", desc.getVersion(),
+                "authors", String.join(", ", desc.getAuthors()));
     }
 
     private void reload(CommandContext<CommandSender> ctx) {
