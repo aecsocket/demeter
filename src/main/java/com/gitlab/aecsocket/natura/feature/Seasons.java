@@ -58,14 +58,14 @@ public class Seasons implements Feature {
 
     @ConfigSerializable
     public static final class WorldConfig {
-        private static final WorldConfig empty = new WorldConfig();
+        public static final WorldConfig EMPTY = new WorldConfig();
 
         @Required public String cycleLength;
         public transient long timeCycleLength = 1;
         public List<BiomeConfig> biomes = new ArrayList<>();
         public transient Map<Biome, BiomeConfig> mappedBiomes = new HashMap<>();
 
-        public BiomeConfig biome(Biome biome) { return mappedBiomes.getOrDefault(biome, mappedBiomes.getOrDefault(null, BiomeConfig.EMPTY)); }
+        public BiomeConfig config(Biome biome) { return mappedBiomes.getOrDefault(biome, mappedBiomes.getOrDefault(null, BiomeConfig.EMPTY)); }
 
         private void init(Seasons feature) throws SerializationException {
             timeCycleLength = (long) TimeUtils.time(cycleLength).a().doubleValue();
@@ -180,9 +180,9 @@ public class Seasons implements Feature {
         this.config.init(this);
     }
 
-    public long time(World world) { return (world.getFullTime() + 6000) % world(world).timeCycleLength; }
-    public WorldConfig world(World world) { return config.worlds.config(world).orElse(WorldConfig.empty); }
-    public Season season(World world, Biome biome) { return world(world).biome(biome).season(time(world)); }
+    public long time(World world) { return (world.getFullTime() + 6000) % config(world).timeCycleLength; }
+    public WorldConfig config(World world) { return config.worlds.config(world).orElse(WorldConfig.EMPTY); }
+    public Season season(World world, Biome biome) { return config(world).config(biome).season(time(world)); }
 
     private Field getField(Class<?> clazz, String name) throws NoSuchFieldException {
         Field field = clazz.getDeclaredField(name);
@@ -335,11 +335,11 @@ public class Seasons implements Feature {
         World world = player.getWorld();
         int[] biomes = packet.getIntegerArrays().read(0);
         long time = time(world);
-        WorldConfig cfg = world(world);
+        WorldConfig cfg = config(world);
         for (int i = 0; i < biomes.length; i++) {
             int id = biomes[i];
             Biome biome = plugin.biomeById(id);
-            Season season = cfg.biome(biome).season(time);
+            Season season = cfg.config(biome).season(time);
             if (season == null)
                 continue;
             biomes[i] = biomeMappings.getOrDefault(season, Collections.emptyMap()).getOrDefault(id, id);

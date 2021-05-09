@@ -168,9 +168,16 @@ public class NaturaCommand {
 
         Block block = location.getBlock();
         Climate climate = plugin.climate();
-        send(sender, "command.climate.get",
+        send(sender, "command.climate.get.total",
                 "temperature", String.format("%.03f", climate.temperature(block)),
                 "humidity", String.format("%.03f", climate.humidity(block)));
+        send(sender, "command.climate.get.base",
+                "temperature", String.format("%.03f", climate.baseTemperature(block)),
+                "humidity", String.format("%.03f", climate.baseHumidity(block)));
+        Climate.WorldState state = climate.state(block.getWorld());
+        send(sender, "command.climate.get.noise",
+                "temperature", String.format("%.03f", state.temperature(block.getX(), block.getZ())),
+                "humidity", String.format("%.03f", state.humidity(block.getX(), block.getZ())));
     }
 
     private void seasonsGet(CommandContext<CommandSender> ctx) {
@@ -188,7 +195,7 @@ public class NaturaCommand {
         }
 
         Seasons seasons = plugin.seasons();
-        Seasons.BiomeConfig biomeConfig = seasons.world(world).biome(biome);
+        Seasons.BiomeConfig biomeConfig = seasons.config(world).config(biome);
         Seasons.Season season = biomeConfig.season(seasons.time(world));
         Locale locale = locale(sender);
         if (season == null)
@@ -224,8 +231,8 @@ public class NaturaCommand {
         }
 
         Seasons seasons = plugin.seasons();
-        Seasons.WorldConfig worldConfig = seasons.world(world);
-        Seasons.BiomeConfig biomeConfig = worldConfig.biome(biome);
+        Seasons.WorldConfig worldConfig = seasons.config(world);
+        Seasons.BiomeConfig biomeConfig = worldConfig.config(biome);
 
         long startsAt = biomeConfig.startsAt(season);
         if (startsAt == -1) {
@@ -257,7 +264,7 @@ public class NaturaCommand {
         int length = 50;
 
         for (World tWorld : allWorlds) {
-            Seasons.WorldConfig cfg = seasons.world(tWorld);
+            Seasons.WorldConfig cfg = seasons.config(tWorld);
             long elapsed = seasons.time(tWorld);
             long cycle = cfg.timeCycleLength;
             double progress = (double) elapsed / cycle;
@@ -271,7 +278,7 @@ public class NaturaCommand {
                     "percent", String.format(locale, "%.1f", progress * 100)
             );
 
-            for (Seasons.BiomeConfig cfg2 : biome == null ? cfg.biomes : Collections.singleton(cfg.biome(biome))) {
+            for (Seasons.BiomeConfig cfg2 : biome == null ? cfg.biomes : Collections.singleton(cfg.config(biome))) {
                 Timeline timeline = new Timeline(length)
                         .complete(progress);
                 for (Seasons.Season season : cfg2.seasons) {

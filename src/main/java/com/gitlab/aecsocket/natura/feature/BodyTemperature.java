@@ -30,8 +30,8 @@ public class BodyTemperature implements Feature {
 
         @ConfigSerializable
         class BlockClimate implements Factor {
-            public double temperature = 0;
-            public double humidity = 0;
+            public double temperature;
+            public double humidity;
 
             @Override
             public double apply(BodyTemperature feature, Player player, double value) {
@@ -47,8 +47,8 @@ public class BodyTemperature implements Feature {
         @ConfigSerializable
         final class Environment implements Factor {
             public Map<World.Environment, Double> environment = new HashMap<>();
-            public double raining = 0;
-            public double rainingNotProtected = 0;
+            public double raining;
+            public double rainingNotProtected;
 
             @Override
             public double apply(BodyTemperature feature, Player player, double value) {
@@ -65,9 +65,23 @@ public class BodyTemperature implements Feature {
         }
 
         @ConfigSerializable
+        final class TimeOfDay implements Factor {
+            public double multiplier;
+
+            @Override
+            public double apply(BodyTemperature feature, Player player, double value) {
+                World world = player.getWorld();
+                if (world.getEnvironment() == World.Environment.NORMAL) {
+                    value += Math.sin((world.getTime() / 24000d) * 2 * Math.PI) * multiplier;
+                }
+                return value;
+            }
+        }
+
+        @ConfigSerializable
         final class Altitude implements Factor {
             public double base = 64;
-            public double multiplier = 0;
+            public double multiplier;
 
             @Override
             public double apply(BodyTemperature feature, Player player, double value) {
@@ -125,8 +139,8 @@ public class BodyTemperature implements Feature {
 
         @ConfigSerializable
         final class PlayerState implements Factor {
-            public double onFire = 0;
-            public double inWater = 0;
+            public double onFire;
+            public double inWater;
 
             private boolean water(Block block) {
                 if (block.getType() == Material.WATER) return true;
@@ -151,19 +165,35 @@ public class BodyTemperature implements Feature {
     public static final class Config {
         public boolean enabled = true;
         public long updateInterval = 1000;
-        public double shiftMultiplier = 0;
+        public double shiftMultiplier;
         public InbuiltFactors factors;
         public Effects effects;
+
+        private void init(BodyTemperature feature) throws SerializationException {
+            factors.init(feature);
+        }
     }
 
     @ConfigSerializable
     public static final class InbuiltFactors {
         public Factor.BlockClimate climate;
         public Factor.Environment environment;
+        public Factor.TimeOfDay timeOfDay;
         public Factor.Altitude altitude;
         public Factor.BlockRelations blockRelations;
         public Factor.Season season;
         public Factor.PlayerState playerState;
+
+        private void init(BodyTemperature feature) throws SerializationException {
+            feature.factors.clear();
+            feature.factors.add(climate);
+            feature.factors.add(environment);
+            feature.factors.add(timeOfDay);
+            feature.factors.add(altitude);
+            feature.factors.add(blockRelations);
+            feature.factors.add(season);
+            feature.factors.add(playerState);
+        }
     }
 
     @ConfigSerializable
@@ -205,14 +235,7 @@ public class BodyTemperature implements Feature {
     @Override
     public void acceptConfig(ConfigurationNode config) throws SerializationException {
         this.config = config.get(Config.class);
-        factors.clear();
-        InbuiltFactors f = this.config.factors;
-        factors.add(f.climate);
-        factors.add(f.environment);
-        factors.add(f.altitude);
-        factors.add(f.blockRelations);
-        factors.add(f.season);
-        factors.add(f.playerState);
+        this.config.init(this);
     }
 
     public double current(Player player) { return current.computeIfAbsent(player, this::target); }
