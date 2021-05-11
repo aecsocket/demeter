@@ -20,7 +20,7 @@ import com.gitlab.aecsocket.natura.util.Timeline;
 import com.gitlab.aecsocket.unifiedframework.core.util.TextUtils;
 import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
-import io.leangen.geantyref.TypeToken;
+import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector2D;
 import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import net.kyori.adventure.text.Component;
 import net.minecraft.server.v1_16_R3.BiomeBase;
@@ -30,15 +30,11 @@ import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.PluginDescriptionFile;
-import org.bukkit.util.StringUtil;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiFunction;
 
 public class NaturaCommand {
-    public static final String SYMBOL_THIS = ".";
-
     private final NaturaPlugin plugin;
     private MinecraftHelp<CommandSender> help;
 
@@ -61,15 +57,11 @@ public class NaturaCommand {
     protected void register(PaperCommandManager<CommandSender> manager) {
         manager.registerBrigadier();
         manager.registerAsynchronousCompletions();
-        manager.getParserRegistry().registerParserSupplier(TypeToken.get(Seasons.class), params -> new SeasonArgument.SeasonParser<>(plugin));
         FactoryDelegatingCaptionRegistry<CommandSender> captions = (FactoryDelegatingCaptionRegistry<CommandSender>) manager.getCaptionRegistry();
         captions.registerMessageFactory(SeasonArgument.ARGUMENT_PARSE_FAILURE_SEASON, (cap, sender) -> "'{input}' is not a valid season");
 
         BukkitAudiences audiences = BukkitAudiences.create(plugin);
         help = new MinecraftHelp<>("/natura help", audiences::sender, manager);
-
-        BiFunction<CommandContext<CommandSender>, String, List<String>> suggestSeasons = (ctx, arg) ->
-                StringUtil.copyPartialMatches(arg, plugin.seasons().config().seasons.keySet(), new ArrayList<>());
 
         Command.Builder<CommandSender> cmdRoot = manager.commandBuilder("natura", ArgumentDescription.of("Natura's main command."), "nat");
         Command.Builder<CommandSender> cmdClimate = cmdRoot
@@ -80,7 +72,7 @@ public class NaturaCommand {
                 .literal("body-temperature", ArgumentDescription.of("Commands involving the body temperature feature."));
 
         manager.command(cmdRoot
-                .literal("help")
+                .literal("help", ArgumentDescription.of("Lists help information."))
                 .argument(StringArgument.optional("query", StringArgument.StringMode.GREEDY))
                 .handler(ctx -> help.queryCommands(ctx.getOrDefault("query", ""), ctx.getSender()))
         );
@@ -101,10 +93,10 @@ public class NaturaCommand {
         );
 
         manager.command(cmdClimate
-                .literal("get", ArgumentDescription.of("Gets climate information about a block."))
+                .literal("factors", ArgumentDescription.of("Shows the factors involved in calculating block temperature."))
                 .argument(LocationArgument.optional("location"))
                 .permission("natura.command.climate.get")
-                .handler(this::climateGet)
+                .handler(this::climateFactors)
         );
 
         manager.command(cmdSeasons
@@ -116,7 +108,7 @@ public class NaturaCommand {
         );
         manager.command(cmdSeasons
                 .literal("set", ArgumentDescription.of("Sets the time of a world in accordance with a specific season."))
-                .argument(SeasonArgument.<CommandSender>newBuilder("season", plugin).withSuggestionsProvider(suggestSeasons).build())
+                .argument(SeasonArgument.of("season", plugin))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the season for."))
                 .argument(EnumArgument.optional(Biome.class, "biome"), ArgumentDescription.of("The biome to get the season for."))
                 .permission("natura.command.seasons.set")
@@ -190,7 +182,22 @@ public class NaturaCommand {
         }
     }
 
-    private void climateGet(CommandContext<CommandSender> ctx) {
+    private Component formatClimate(CommandSender sender, String format, double value) {
+        String formatted = String.format(format, value);
+        if (value > 0)
+            return gen(sender, "temperature.positive",
+                    "temperature", formatted);
+        if (value < 0)
+            return gen(sender, "temperature.negative",
+                    "temperature", formatted);
+        return gen(sender, "temperature.neutral",
+                "temperature", formatted);
+    }
+
+    private Component temp(CommandSender sender, double value) { return formatClimate(sender, "%.2f", value); }
+    private Component humid(CommandSender sender, double humidity) { return formatClimate(sender, "%.0f", humidity * 100); }
+
+    private void climateFactors(CommandContext<CommandSender> ctx) {
         CommandSender sender = ctx.getSender();
         Player player = sender instanceof Player ? ((Player) sender) : null;
         Location location = ctx.getOrDefault("location", player == null ? null : player.getLocation());
@@ -201,16 +208,27 @@ public class NaturaCommand {
 
         Block block = location.getBlock();
         Climate climate = plugin.climate();
-        send(sender, "command.climate.get.total",
-                "temperature", String.format("%.03f", climate.temperature(block)),
-                "humidity", String.format("%.03f", climate.humidity(block)));
-        send(sender, "command.climate.get.base",
-                "temperature", String.format("%.03f", climate.baseTemperature(block)),
-                "humidity", String.format("%.03f", climate.baseHumidity(block)));
-        Climate.WorldState state = climate.state(block.getWorld());
-        send(sender, "command.climate.get.noise",
-                "temperature", String.format("%.03f", state.temperature(block.getX(), block.getZ())),
-                "humidity", String.format("%.03f", state.humidity(block.getX(), block.getZ())));
+        send(sender, "command.climate.factors.header",
+                "coords", String.format("%d, %d, %d", block.getX(), block.getY(), block.getZ()),
+                "temperature", temp(sender, climate.temperature(block)),
+                "humidity", humid(sender, climate.humidity(block)));
+
+        Vector2D value = Vector2D.ZERO;
+        for (Climate.Factor factor : climate.factors()) {
+            Vector2D old = value;
+            value = new Vector2D(
+                    factor.temperature(climate, block, value.x()),
+                    factor.humidity(climate, block, value.y())
+            );
+            send(sender, "command.climate.factors.entry",
+                    "class", factor.getClass().getSimpleName(),
+                    "old_t", temp(sender, old.x()),
+                    "old_h", humid(sender, old.y()),
+                    "new_t", temp(sender, value.x()),
+                    "new_h", humid(sender, value.y()),
+                    "delta_t", temp(sender, value.x() - old.x()),
+                    "delta_h", humid(sender, value.y() - old.y()));
+        }
     }
 
     private void seasonsGet(CommandContext<CommandSender> ctx) {
@@ -325,18 +343,6 @@ public class NaturaCommand {
                 );
             }
         }
-    }
-
-    private Component temp(CommandSender sender, double temperature) {
-        String formatted = String.format("%.02f", temperature);
-        if (temperature > 0)
-            return gen(sender, "temperature.positive",
-                    "temperature", formatted);
-        if (temperature < 0)
-            return gen(sender, "temperature.negative",
-                    "temperature", formatted);
-        return gen(sender, "temperature.neutral",
-                "temperature", formatted);
     }
 
     private void bodyTemperatureFactors(CommandContext<CommandSender> ctx) {

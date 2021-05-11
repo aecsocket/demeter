@@ -12,7 +12,12 @@ import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Waterlogged;
 import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionType;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Required;
@@ -41,52 +46,6 @@ public class BodyTemperature implements Feature {
                 return value
                         + (climate.temperature(block) * temperature)
                         + (climate.humidity(block) * humidity);
-            }
-        }
-
-        @ConfigSerializable
-        final class Environment implements Factor {
-            public Map<World.Environment, Double> environment = new HashMap<>();
-            public double raining;
-            public double rainingNotProtected;
-
-            @Override
-            public double apply(BodyTemperature feature, Player player, double value) {
-                World world = player.getWorld();
-                if (!world.isClearWeather()) {
-                    value += raining;
-                    Location location = player.getEyeLocation();
-                    if (location.getY() > world.getHighestBlockYAt(location.getBlockX(), location.getBlockZ()))
-                        value += rainingNotProtected;
-                }
-                return value
-                        + environment.getOrDefault(world.getEnvironment(), 0d);
-            }
-        }
-
-        @ConfigSerializable
-        final class TimeOfDay implements Factor {
-            public double multiplier;
-
-            @Override
-            public double apply(BodyTemperature feature, Player player, double value) {
-                World world = player.getWorld();
-                if (world.getEnvironment() == World.Environment.NORMAL) {
-                    value += Math.sin((world.getTime() / 24000d) * 2 * Math.PI) * multiplier;
-                }
-                return value;
-            }
-        }
-
-        @ConfigSerializable
-        final class Altitude implements Factor {
-            public double base = 64;
-            public double multiplier;
-
-            @Override
-            public double apply(BodyTemperature feature, Player player, double value) {
-                return value
-                        + ((base - player.getLocation().getY()) * multiplier);
             }
         }
 
@@ -125,19 +84,6 @@ public class BodyTemperature implements Feature {
         }
 
         @ConfigSerializable
-        final class Season implements Factor {
-            @Setting(nodeFromParent = true)
-            public Map<String, Double> values = new HashMap<>();
-
-            @Override
-            public double apply(BodyTemperature feature, Player player, double value) {
-                Seasons.Season season = feature.plugin.seasons().season(player.getWorld(), player.getLocation().getBlock().getBiome());
-                return value
-                        + values.getOrDefault(season.name, 0d);
-            }
-        }
-
-        @ConfigSerializable
         final class PlayerState implements Factor {
             public double onFire;
             public double inWater;
@@ -159,12 +105,46 @@ public class BodyTemperature implements Feature {
                 return value;
             }
         }
+
+        @ConfigSerializable
+        final class Armor implements Factor {
+            @Setting(nodeFromParent = true)
+            public Map<Material, Double> values = new HashMap<>();
+
+            @Override
+            public double apply(BodyTemperature feature, Player player, double value) {
+                for (ItemStack item : player.getInventory().getArmorContents()) {
+                    if (item == null) continue;
+                    value += values.getOrDefault(item.getType(), 0d);
+                }
+                return value;
+            }
+        }
+
+        @ConfigSerializable
+        final class Consumables implements Factor {
+            public double reduction;
+            public Map<Material, Double> types = new HashMap<>();
+            public Map<PotionType, Double> potions = new HashMap<>();
+            public transient final Map<Player, Map<Object, Double>> effects = new HashMap<>();
+
+            @Override
+            public double apply(BodyTemperature feature, Player player, double value) {
+                if (!effects.containsKey(player))
+                    return value;
+                for (var entry : effects.get(player).entrySet()) {
+                    value += entry.getValue();
+                }
+                return value;
+            }
+        }
     }
 
     @ConfigSerializable
     public static final class Config {
         public boolean enabled = true;
         public long updateInterval = 1000;
+        public long updateEffectsInterval = 5000;
         public double shiftMultiplier;
         public InbuiltFactors factors;
         public Effects effects;
@@ -177,22 +157,18 @@ public class BodyTemperature implements Feature {
     @ConfigSerializable
     public static final class InbuiltFactors {
         public Factor.BlockClimate climate;
-        public Factor.Environment environment;
-        public Factor.TimeOfDay timeOfDay;
-        public Factor.Altitude altitude;
         public Factor.BlockRelations blockRelations;
-        public Factor.Season season;
         public Factor.PlayerState playerState;
+        public Factor.Armor armor;
+        public Factor.Consumables consumables;
 
         private void init(BodyTemperature feature) throws SerializationException {
             feature.factors.clear();
             feature.factors.add(climate);
-            feature.factors.add(environment);
-            feature.factors.add(timeOfDay);
-            feature.factors.add(altitude);
             feature.factors.add(blockRelations);
-            feature.factors.add(season);
             feature.factors.add(playerState);
+            feature.factors.add(armor);
+            feature.factors.add(consumables);
         }
     }
 
@@ -249,8 +225,9 @@ public class BodyTemperature implements Feature {
     private void applyEffects(Player player, double current, Map<Double, List<Effect>> effects, BiPredicate<Double, Double> test) {
         for (var entry : effects.entrySet()) {
             if (test.test(current, entry.getKey())) {
-                for (Effect effect : entry.getValue())
+                for (Effect effect : entry.getValue()) {
                     effect.apply(player);
+                }
             }
         }
     }
@@ -260,21 +237,59 @@ public class BodyTemperature implements Feature {
         if (!config.enabled) return;
         plugin.scheduler().run(Task.repeating(ctx -> {
             current.entrySet().removeIf(e -> !e.getKey().isValid());
+
+            Factor.Consumables consumables = config.factors.consumables;
+            consumables.effects.entrySet().removeIf(e -> !e.getKey().isValid());
+
             for (Player player : Bukkit.getOnlinePlayers()) {
                 double current = current(player);
                 double target = target(player);
                 current += (target - current) * config.shiftMultiplier;
-
-                applyEffects(player, current, config.effects.higherThan, (a, b) -> a >= b);
-                applyEffects(player, current, config.effects.lowerThan, (a, b) -> a <= b);
-
                 this.current.put(player, current);
+
+                if (consumables.effects.containsKey(player)) {
+                    var iter = consumables.effects.get(player).entrySet().iterator();
+                    while (iter.hasNext()) {
+                        var entry = iter.next();
+                        double effect = entry.getValue();
+                        double sign = Math.signum(effect);
+                        effect -= consumables.reduction * (ctx.delta() / 1000d) * sign;
+                        if ((sign == 0) || (sign > 0 && effect <= 0) || (sign < 0 && effect >= 0)) {
+                            iter.remove();
+                        } else {
+                            consumables.effects.get(player).put(entry.getKey(), effect);
+                        }
+                    }
+                }
             }
         }, config.updateInterval));
+
+        plugin.scheduler().run(Task.repeating(ctx -> {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                double current = current(player);
+                applyEffects(player, current, config.effects.higherThan, (a, b) -> a >= b);
+                applyEffects(player, current, config.effects.lowerThan, (a, b) -> a <= b);
+            }
+        }, config.updateEffectsInterval));
     }
 
     @Override
     public void respawn(PlayerPostRespawnEvent event) {
         current.put(event.getPlayer(), target(event.getPlayer()));
+    }
+
+    @Override
+    public void itemConsume(PlayerItemConsumeEvent event) {
+        Factor.Consumables consumables = config.factors.consumables;
+        Player player = event.getPlayer();
+        Material material = event.getItem().getType();
+        var effects = consumables.effects.computeIfAbsent(player, p -> new HashMap<>());
+
+        effects.put(material, consumables.types.getOrDefault(material, 0d));
+        ItemMeta meta = event.getItem().getItemMeta();
+        if (meta instanceof PotionMeta) {
+            PotionType type = ((PotionMeta) meta).getBasePotionData().getType();
+            effects.put(type, consumables.potions.getOrDefault(type, 0d));
+        }
     }
 }

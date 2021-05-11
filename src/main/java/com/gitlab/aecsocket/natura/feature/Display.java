@@ -4,6 +4,7 @@ import com.gitlab.aecsocket.natura.NaturaPlugin;
 import com.gitlab.aecsocket.natura.util.WorldConfigManager;
 import com.gitlab.aecsocket.unifiedframework.core.parsing.math.MathExpressionNode;
 import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -17,10 +18,16 @@ import java.util.Locale;
 public class Display implements Feature {
     public static final String ID = "display";
 
+    public enum Format {
+        ACTION_BAR,
+        BOSS_BAR
+    }
+
     @ConfigSerializable
     public static final class Config {
         public boolean enabled;
         public long updateInterval = 1000;
+        public Format format;
         public WorldConfigManager<WorldConfig> worlds;
 
         public String temperatureFormat = "%.2f";
@@ -79,7 +86,7 @@ public class Display implements Feature {
 
                 Locale locale = player.locale();
                 long time = (world.getTime() + 6000) % NaturaPlugin.TICKS_PER_DAY;
-                player.sendActionBar(plugin.gen(locale, "display.action_bar",
+                Component text = plugin.gen(locale, "display.text",
                         "hours", String.format("%02d", (int) (time / NaturaPlugin.HOUR) /* % 24 */),
                         "minutes", String.format("%02d", (int) ((time / NaturaPlugin.MINUTE) % 60)),
                         "seconds", String.format("%02d", (int) ((time / NaturaPlugin.SECOND) % 60)),
@@ -88,7 +95,15 @@ public class Display implements Feature {
                         "season", season == null ? plugin.gen(locale, "display.season.none") : plugin.gen(locale, "display.season.season",
                                 "season", season.localizedName(plugin, locale)),
                         "current_body_temperature", value(bodyTemp.current(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression),
-                        "target_body_temperature", config.calculateTarget ? value(bodyTemp.target(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression) : ""));
+                        "target_body_temperature", config.calculateTarget ? value(bodyTemp.target(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression) : "");
+                switch (config.format) {
+                    case ACTION_BAR:
+                        player.sendActionBar(text);
+                        break;
+                    case BOSS_BAR:
+                        plugin.bossBar(player).name(text);
+                        break;
+                }
             }
         }, config.updateInterval));
     }

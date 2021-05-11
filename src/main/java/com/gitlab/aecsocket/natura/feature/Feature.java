@@ -3,6 +3,7 @@ package com.gitlab.aecsocket.natura.feature;
 import com.comphenix.protocol.events.PacketEvent;
 import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import org.bukkit.event.block.BlockGrowEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.serialize.SerializationException;
 
@@ -19,4 +20,5 @@ public interface Feature {
     default void mapChunk(PacketEvent event) {}
     default void respawn(PlayerPostRespawnEvent event) {}
     default void blockGrow(BlockGrowEvent event) {}
+    default void itemConsume(PlayerItemConsumeEvent event) {}
 }

@@ -15,6 +15,8 @@ import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
 import com.gitlab.aecsocket.unifiedframework.paper.util.plugin.BasePlugin;
 import com.gitlab.aecsocket.unifiedframework.paper.util.plugin.PluginHook;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import net.kyori.adventure.bossbar.BossBar;
+import net.kyori.adventure.text.Component;
 import net.minecraft.server.v1_16_R3.*;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
@@ -60,6 +62,7 @@ public final class NaturaPlugin extends BasePlugin {
 
     private final Map<Biome, BiomeBase> biomeInternalMap = new HashMap<>();
     private final Map<Integer, Biome> biomeIdMap = new HashMap<>();
+    private final Map<Player, BossBar> bossBars = new HashMap<>();
     private ImageColors foliageColors;
     private GrassColors grassColors;
 
@@ -103,6 +106,7 @@ public final class NaturaPlugin extends BasePlugin {
 
     @Override
     public void onDisable() {
+        clearBossBars();
         features.forEach(Feature::stop);
     }
 
@@ -161,9 +165,37 @@ public final class NaturaPlugin extends BasePlugin {
 
     public Map<Biome, BiomeBase> internalBiomes() { return biomeInternalMap; }
     public BiomeBase internalBiome(Biome biome) { return biomeInternalMap.get(biome); }
-
     public Map<Integer, Biome> biomeIds() { return biomeIdMap; }
     public Biome biomeById(int id) { return biomeIdMap.get(id); }
+
+    public Map<Player, BossBar> bossBars() { return bossBars; }
+    public BossBar bossBar(Player player) {
+        return bossBars.computeIfAbsent(player, p -> {
+            BossBar bar = BossBar.bossBar(Component.empty(),
+                    setting(n -> n.getFloat(0f), "boss_bar", "progress"),
+                    setting(n -> n.get(BossBar.Color.class, BossBar.Color.WHITE), "boss_bar", "color"),
+                    setting(n -> n.get(BossBar.Overlay.class, BossBar.Overlay.PROGRESS), "boss_bar", "overlay")
+            );
+            // TODO
+            bar.addFlag(BossBar.Flag.CREATE_WORLD_FOG);
+            // END
+            if (setting(n -> n.getBoolean(true), "boss_bar", "enabled")) {
+                p.showBossBar(bar);
+            }
+            return bar;
+        });
+    }
+    public void clearBossBar(Player player) {
+        BossBar bar = bossBars.remove(player);
+        if (bar != null)
+            player.hideBossBar(bar);
+    }
+    public void clearBossBars() {
+        for (var entry : bossBars.entrySet()) {
+            entry.getKey().hideBossBar(entry.getValue());
+        }
+        bossBars.clear();
+    }
 
     public ImageColors foliageColors() { return foliageColors; }
     public GrassColors grassColors() { return grassColors; }

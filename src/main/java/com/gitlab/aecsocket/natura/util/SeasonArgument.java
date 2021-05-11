@@ -14,6 +14,7 @@ import com.gitlab.aecsocket.natura.feature.Seasons;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.function.BiFunction;
@@ -109,6 +110,11 @@ public class SeasonArgument<C> extends CommandArgument<C, Seasons.Season> {
                 return ArgumentParseResult.failure(new Exception(arg, ctx));
             input.remove();
             return ArgumentParseResult.success(season);
+        }
+
+        @Override
+        public @NonNull List<@NonNull String> suggestions(@NonNull CommandContext<C> ctx, @NonNull String input) {
+            return new ArrayList<>(plugin.seasons().config().seasons.keySet());
         }
     }
 }
