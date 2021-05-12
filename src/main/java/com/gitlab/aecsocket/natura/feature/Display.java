@@ -39,6 +39,9 @@ public class Display implements Feature {
         public String bodyTemperatureFormat = "%.2f";
         public MathExpressionNode bodyTemperatureExpression;
         public boolean calculateTarget;
+
+        public String windSpeedFormat = "%.1f";
+        public MathExpressionNode windSpeedExpression;
     }
 
     @ConfigSerializable
@@ -95,7 +98,8 @@ public class Display implements Feature {
                         "season", season == null ? plugin.gen(locale, "display.season.none") : plugin.gen(locale, "display.season.season",
                                 "season", season.localizedName(plugin, locale)),
                         "current_body_temperature", value(bodyTemp.current(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression),
-                        "target_body_temperature", config.calculateTarget ? value(bodyTemp.target(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression) : "");
+                        "target_body_temperature", config.calculateTarget ? value(bodyTemp.target(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression) : "",
+                        "wind_speed", value(climate.state(world).wind.manhattanLength(), locale, config.windSpeedFormat, config.windSpeedExpression));
                 switch (config.format) {
                     case ACTION_BAR:
                         player.sendActionBar(text);

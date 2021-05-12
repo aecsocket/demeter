@@ -176,9 +176,6 @@ public final class NaturaPlugin extends BasePlugin {
                     setting(n -> n.get(BossBar.Color.class, BossBar.Color.WHITE), "boss_bar", "color"),
                     setting(n -> n.get(BossBar.Overlay.class, BossBar.Overlay.PROGRESS), "boss_bar", "overlay")
             );
-            // TODO
-            bar.addFlag(BossBar.Flag.CREATE_WORLD_FOG);
-            // END
             if (setting(n -> n.getBoolean(true), "boss_bar", "enabled")) {
                 p.showBossBar(bar);
             }
