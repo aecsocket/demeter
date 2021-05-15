@@ -3,16 +3,16 @@ package com.gitlab.aecsocket.natura.util;
 import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
-import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import org.bukkit.GameRule;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 public class Timeline {
+    // TODO: shade plugin loler
+    // public record Section(TextColor color, double percent) {}
     public static class Section {
         public final TextColor color;
         public final double percent;

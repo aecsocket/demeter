@@ -5,10 +5,11 @@ import com.gitlab.aecsocket.natura.util.NaturaProtocol;
 import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
 import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
 import net.kyori.adventure.bossbar.BossBar;
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.event.weather.WeatherChangeEvent;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -39,18 +40,22 @@ public class Weather implements Feature {
         return new Type() {
             @Override
             public double downfall() {
-                return humidity;
+                double minHumidity = 0.5 + (temperature * 0.2);
+                if (humidity > minHumidity)
+                    return (humidity-minHumidity) / (1-minHumidity);
+                return 0;
             }
 
-            @Override
-            public boolean fog() {
-                return temperature < 0.2;
-            }
+            @Override public boolean fog() { return temperature < 0.4 && humidity > 0.9; }
         };
     }
 
     @Override
     public void start() {
+        for (World world : Bukkit.getWorlds()) {
+            if (!world.isClearWeather())
+                world.setStorm(false);
+        }
         plugin.scheduler().run(Task.repeating(ctx -> {
             currentDownfall.entrySet().removeIf(e -> !e.getKey().isValid());
             for (Player player : Bukkit.getOnlinePlayers()) {
@@ -69,10 +74,16 @@ public class Weather implements Feature {
 
                 double target = weather.downfall();
                 double downfall = currentDownfall.computeIfAbsent(player, p -> target);
-                downfall += (target - downfall) * 0.1;
+                downfall += (target - downfall) * 0.01;
                 currentDownfall.put(player, downfall);
                 NaturaProtocol.downfall(plugin, player, downfall);
             }
         }, Utils.MSPT));
+    }
+
+    @Override
+    public void weatherChange(WeatherChangeEvent event) {
+        if (event.toWeatherState()) // if being set to rain, cancel
+            event.setCancelled(true);
     }
 }

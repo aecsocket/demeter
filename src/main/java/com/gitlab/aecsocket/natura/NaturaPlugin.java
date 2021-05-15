@@ -20,6 +20,7 @@ import net.kyori.adventure.text.Component;
 import net.minecraft.server.v1_16_R3.*;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
+import org.bukkit.World;
 import org.bukkit.block.Biome;
 import org.bukkit.command.CommandSender;
 import org.bukkit.craftbukkit.v1_16_R3.block.CraftBlock;

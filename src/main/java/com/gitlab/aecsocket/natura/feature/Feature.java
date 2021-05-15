@@ -4,6 +4,7 @@ import com.comphenix.protocol.events.PacketEvent;
 import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import org.bukkit.event.block.BlockGrowEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
+import org.bukkit.event.weather.WeatherChangeEvent;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.serialize.SerializationException;
 
@@ -21,4 +22,5 @@ public interface Feature {
     default void respawn(PlayerPostRespawnEvent event) {}
     default void blockGrow(BlockGrowEvent event) {}
     default void itemConsume(PlayerItemConsumeEvent event) {}
+    default void weatherChange(WeatherChangeEvent event) {}
 }

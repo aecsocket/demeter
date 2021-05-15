@@ -7,9 +7,10 @@ import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
 import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector2D;
 import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector2I;
 import net.minecraft.server.v1_16_R3.BiomeBase;
-import org.bukkit.Bukkit;
-import org.bukkit.World;
+import org.bukkit.*;
 import org.bukkit.block.Block;
+import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 import org.bukkit.util.noise.NoiseGenerator;
 import org.bukkit.util.noise.PerlinNoiseGenerator;
 import org.spongepowered.configurate.ConfigurationNode;
@@ -23,6 +24,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class Climate implements Feature {
     public static final String ID = "climate";
+    public static final Vector2D NORTH = new Vector2D(0, -1);
 
     public interface Factor {
         double temperature(Climate feature, Block block, double value);
@@ -209,32 +211,37 @@ public class Climate implements Feature {
 
         @Required public boolean enabled;
         public Vector2D defaultWind;
+        public double windBearingDelta;
+        public double windMagnitudeDelta;
+        public double windMaxMagnitude;
+        public double windMeanShiftPeriod;
+        public double windMeanShiftAmplitude;
         public NoiseSettings noiseSettings;
     }
 
     @ConfigSerializable
     public static class WorldState {
-        public static final WorldState EMPTY = new WorldState(null) {
+        public static final WorldState EMPTY = new WorldState(null, null) {
             @Override protected double val(Vector2I pos, double z, Map<Vector2I, Double> cache) { return 0; }
         };
 
         public transient final World world;
+        public transient final WorldConfig config;
         public Vector2D wind = new Vector2D();
-        public List<Vector2D> forecast = new ArrayList<>();
         public Vector2D noiseOffset = new Vector2D();
         public transient NoiseGenerator noise;
-        public transient NoiseSettings noiseSettings;
         public transient final Map<Vector2I, Double> temperatureCache = new HashMap<>();
         public transient final Map<Vector2I, Double> humidityCache = new HashMap<>();
 
-        public WorldState(World world) {
+        public WorldState(World world, WorldConfig config) {
             this.world = world;
+            this.config = config;
         }
 
         protected double val(Vector2I pos, double z, Map<Vector2I, Double> cache) {
             if (cache.containsKey(pos))
                 return cache.get(pos);
-            double result = noiseSettings.noise(noise,
+            double result = config.noiseSettings.noise(noise,
                     pos.x() + noiseOffset.x(),
                     pos.y() + noiseOffset.y(),
                     z
@@ -243,11 +250,19 @@ public class Climate implements Feature {
             return result;
         }
 
-        public double temperature(Vector2I pos) { return val(pos, noiseSettings.temperatureZ, temperatureCache); }
+        public double temperature(Vector2I pos) { return val(pos, config.noiseSettings.temperatureZ, temperatureCache); }
         public double temperature(int x, int y) { return temperature(new Vector2I(x, y)); }
 
-        public double humidity(Vector2I pos) { return val(pos, noiseSettings.humidityZ, humidityCache); }
+        public double humidity(Vector2I pos) { return val(pos, config.noiseSettings.humidityZ, humidityCache); }
         public double humidity(int x, int y) { return humidity(new Vector2I(x, y)); }
+
+        private double rng() { return (ThreadLocalRandom.current().nextDouble() - 0.5) * 2; }
+
+        public double meanWind() {
+            // mean of wind shifts as time passes
+            // so the wind modulates between high means and low means
+            return (config.windMaxMagnitude / 2) + Math.sin(world.getFullTime() / Math.PI / config.windMeanShiftPeriod) * config.windMeanShiftAmplitude;
+        }
 
         public void update(long delta) {
             if (wind.manhattanLength() > 0d) {
@@ -255,14 +270,28 @@ public class Climate implements Feature {
                 temperatureCache.clear();
                 humidityCache.clear();
             }
+
+            double m = wind.length(); // magnitude
+            double b = config.windMagnitudeDelta; // delta bounds
+            double mu = meanWind();
+
+            double lb = m - b - (m - mu) / mu; // lower bound of next wind
+            double ub = m + b - (m - mu) / mu; // upper bound of next wind
+
+            double magnitude = ThreadLocalRandom.current().nextDouble(lb, ub);
+            double bearing = wind.bearing(NORTH) + (rng() * config.windBearingDelta);
+
+            final double _halfPi = Math.PI / 2;
+            wind = new Vector2D(magnitude * Math.cos(bearing - _halfPi), magnitude * Math.sin(bearing - _halfPi));
         }
 
-        public static WorldState of(World world, WorldConfig cfg) {
-            WorldState r = new WorldState(world);
+        public static WorldState of(World world, WorldConfig config) {
+            WorldState r = new WorldState(world, config);
             r.noise = new PerlinNoiseGenerator(world.getSeed());
-            r.noiseSettings = cfg.noiseSettings;
             Random rng = ThreadLocalRandom.current();
-            r.wind = cfg.defaultWind == null ? new Vector2D(rng.nextGaussian(), rng.nextGaussian()) : cfg.defaultWind;
+            r.wind = config.defaultWind == null ? new Vector2D(rng.nextDouble() * config.windMaxMagnitude, rng.nextDouble() * config.windMaxMagnitude) : config.defaultWind;
+            if (config.defaultWind != null)
+                r.wind = config.defaultWind;
             return r;
         }
     }

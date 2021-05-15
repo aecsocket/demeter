@@ -4,6 +4,8 @@ import com.gitlab.aecsocket.natura.NaturaPlugin;
 import com.gitlab.aecsocket.natura.util.WorldConfigManager;
 import com.gitlab.aecsocket.unifiedframework.core.parsing.math.MathExpressionNode;
 import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
+import com.gitlab.aecsocket.unifiedframework.core.util.Cardinal;
+import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector2D;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -41,7 +43,6 @@ public class Display implements Feature {
         public boolean calculateTarget;
 
         public String windSpeedFormat = "%.1f";
-        public MathExpressionNode windSpeedExpression;
     }
 
     @ConfigSerializable
@@ -86,6 +87,7 @@ public class Display implements Feature {
                 Seasons seasons = plugin.seasons();
                 Seasons.Season season = seasons.season(world, block.getBiome());
                 BodyTemperature bodyTemp = plugin.bodyTemperature();
+                Vector2D wind = climate.state(world).wind;
 
                 Locale locale = player.locale();
                 long time = (world.getTime() + 6000) % NaturaPlugin.TICKS_PER_DAY;
@@ -99,7 +101,8 @@ public class Display implements Feature {
                                 "season", season.localizedName(plugin, locale)),
                         "current_body_temperature", value(bodyTemp.current(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression),
                         "target_body_temperature", config.calculateTarget ? value(bodyTemp.target(player), locale, config.bodyTemperatureFormat, config.bodyTemperatureExpression) : "",
-                        "wind_speed", value(climate.state(world).wind.manhattanLength(), locale, config.windSpeedFormat, config.windSpeedExpression));
+                        "wind_direction", plugin.gen(locale, "display.cardinal." + Cardinal.Secondary.closest(wind.bearing(Climate.NORTH)).name().toLowerCase(Locale.ROOT)),
+                        "wind_speed", value(wind.length(), locale, config.windSpeedFormat, null)); // wind vector is always m/s
                 switch (config.format) {
                     case ACTION_BAR:
                         player.sendActionBar(text);

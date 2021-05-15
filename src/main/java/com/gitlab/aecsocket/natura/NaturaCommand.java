@@ -12,6 +12,7 @@ import cloud.commandframework.captions.FactoryDelegatingCaptionRegistry;
 import cloud.commandframework.context.CommandContext;
 import cloud.commandframework.minecraft.extras.MinecraftHelp;
 import cloud.commandframework.paper.PaperCommandManager;
+import cloud.commandframework.types.tuples.Pair;
 import com.gitlab.aecsocket.natura.feature.BodyTemperature;
 import com.gitlab.aecsocket.natura.feature.Climate;
 import com.gitlab.aecsocket.natura.feature.Seasons;
@@ -21,6 +22,8 @@ import com.gitlab.aecsocket.unifiedframework.core.util.TextUtils;
 import com.gitlab.aecsocket.unifiedframework.core.util.log.LogLevel;
 import com.gitlab.aecsocket.unifiedframework.core.util.result.LoggingEntry;
 import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector2D;
+import com.gitlab.aecsocket.unifiedframework.paper.util.data.ParticleData;
+import io.leangen.geantyref.TypeToken;
 import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import net.kyori.adventure.text.Component;
 import net.minecraft.server.v1_16_R3.BiomeBase;
@@ -30,11 +33,18 @@ import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.PluginDescriptionFile;
+import org.bukkit.util.Vector;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class NaturaCommand {
+    private static final double windSmallStepSize = 0.1;
+    private static final double windLargeStepSize = 0.5;
+    private static final ParticleData[] windParticles = {
+            new ParticleData().particle(Particle.FLAME)
+    };
+
     private final NaturaPlugin plugin;
     private MinecraftHelp<CommandSender> help;
 
@@ -66,6 +76,8 @@ public class NaturaCommand {
         Command.Builder<CommandSender> cmdRoot = manager.commandBuilder("natura", ArgumentDescription.of("Natura's main command."), "nat");
         Command.Builder<CommandSender> cmdClimate = cmdRoot
                 .literal("climate", ArgumentDescription.of("Commands involving the climate feature."));
+        Command.Builder<CommandSender> cmdClimateWind = cmdClimate
+                .literal("wind", ArgumentDescription.of("Commands involving the wind of climates."));
         Command.Builder<CommandSender> cmdSeasons = cmdRoot
                 .literal("seasons", ArgumentDescription.of("Commands involving the seasons feature."));
         Command.Builder<CommandSender> cmdBodyTemperature = cmdRoot
@@ -94,9 +106,25 @@ public class NaturaCommand {
 
         manager.command(cmdClimate
                 .literal("factors", ArgumentDescription.of("Shows the factors involved in calculating block temperature."))
-                .argument(LocationArgument.optional("location"))
+                .argument(LocationArgument.optional("location"), ArgumentDescription.of("The location to get climate information about."))
                 .permission("natura.command.climate.get")
                 .handler(this::climateFactors)
+        );
+        manager.command(cmdClimateWind
+                .literal("get", ArgumentDescription.of("Gets the exact information on the wind of a world."))
+                .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get information for."))
+                .permission("natura.command.climate.wind.get")
+                .handler(this::climateWindGet)
+        );
+        manager.command(cmdClimateWind
+                .literal("set", ArgumentDescription.of("Sets the exact direction and magnitude of the wind of a world."))
+                .argumentPair("wind", TypeToken.get(Vector2D.class),
+                        Pair.of("x", "y"), Pair.of(double.class, double.class),
+                        (s, d) -> new Vector2D(d.getFirst(), d.getSecond()),
+                        ArgumentDescription.of("The wind vector to set to."))
+                .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to set the wind for."))
+                .permission("natura.command.climate.wind.set")
+                .handler(this::climateWindSet)
         );
 
         manager.command(cmdSeasons
@@ -229,6 +257,62 @@ public class NaturaCommand {
                     "delta_t", temp(sender, value.x() - old.x()),
                     "delta_h", humid(sender, value.y() - old.y()));
         }
+    }
+
+    private String vector(Locale locale, Vector2D wind) { return String.format(locale, "%.3f, %.3f", wind.x(), wind.y()); }
+    private String angle(Locale locale, Vector2D wind) { return String.format(locale, "%.0f", Math.toDegrees(wind.bearing(Climate.NORTH))); }
+    private String length(Locale locale, Vector2D wind) { return String.format(locale, "%.3f", wind.length()); }
+
+    private void climateWindGet(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        Player player = sender instanceof Player ? ((Player) sender) : null;
+        World world = ctx.getOrDefault("world", player == null ? null : player.getWorld());
+        if (world == null) {
+            send(sender, "command.error.no_world");
+            return;
+        }
+
+        Climate.WorldState state = plugin.climate().state(world);
+        Vector2D wind = state.wind;
+        Locale locale = locale(sender);
+        send(sender, "command.climate.wind.get",
+                "world", world.getName(),
+                "wind", vector(locale, wind),
+                "angle", angle(locale, wind),
+                "length", length(locale, wind),
+                "mean", String.format(locale, "%.03f", state.meanWind()));
+        if (player != null) {
+            double length = wind.length();
+            Location location = player.getLocation().add(0, 2, 0);
+            wind = wind.normalize();
+            Vector smallStep = new Vector(wind.x() * windSmallStepSize, 0, wind.y() * windSmallStepSize);
+            Vector largeStep = new Vector(wind.x() * windLargeStepSize, 0, wind.y() * windLargeStepSize);
+            for (double d = 0; d < length;) {
+                ParticleData.spawn(player, location, windParticles);
+                boolean large = d >= 5;
+                d += large ? windLargeStepSize : windSmallStepSize;
+                location.add(large ? largeStep : smallStep);
+            }
+        }
+    }
+
+    private void climateWindSet(CommandContext<CommandSender> ctx) {
+        CommandSender sender = ctx.getSender();
+        Player player = sender instanceof Player ? ((Player) sender) : null;
+        Vector2D wind = ctx.get("wind");
+        World world = ctx.getOrDefault("world", player == null ? null : player.getWorld());
+        if (world == null) {
+            send(sender, "command.error.no_world");
+            return;
+        }
+
+        plugin.climate().state(world).wind = wind;
+        Locale locale = locale(sender);
+        send(sender, "command.climate.wind.set",
+                "world", world.getName(),
+                "wind", vector(locale, wind),
+                "angle", angle(locale, wind),
+                "length", length(locale, wind));
     }
 
     private void seasonsGet(CommandContext<CommandSender> ctx) {

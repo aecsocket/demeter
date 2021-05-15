@@ -3,7 +3,6 @@ package com.gitlab.aecsocket.natura.feature;
 import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import com.gitlab.aecsocket.natura.NaturaPlugin;
 import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
-import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector2D;
 import com.gitlab.aecsocket.unifiedframework.core.util.vector.Vector3I;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -37,35 +36,17 @@ public class BodyTemperature implements Feature {
         @ConfigSerializable
         class BlockClimate implements Factor {
             public double temperature;
-            public double humidity;
+            public double minHumidityEffect = 1;
+            public double humidityEffect;
 
             @Override
             public double apply(BodyTemperature feature, Player player, double value) {
                 Climate climate = feature.plugin.climate();
                 Block block = player.getLocation().getBlock();
 
-                return value
-                        + (climate.temperature(block) * temperature)
-                        + (climate.humidity(block) * humidity);
-            }
-        }
-
-        @ConfigSerializable
-        class Wind implements Factor {
-            public double base;
-            public double unprotected;
-
-            @Override
-            public double apply(BodyTemperature feature, Player player, double value) {
-                Climate climate = feature.plugin.climate();
-                World world = player.getWorld();
-                Location location = player.getLocation();
-
-                double length = climate.state(world).wind.manhattanLength(); // don't use #length since it might be called a lot
-                value += length * -base;
-                if (world.getHighestBlockYAt(location) <= location.getY())
-                    value += length * -unprotected;
-                return value;
+                double delta = climate.temperature(block) * temperature;
+                delta *= minHumidityEffect + (climate.humidity(block) * humidityEffect);
+                return value + delta;
             }
         }
 
@@ -177,7 +158,6 @@ public class BodyTemperature implements Feature {
     @ConfigSerializable
     public static final class InbuiltFactors {
         public Factor.BlockClimate climate;
-        public Factor.Wind wind;
         public Factor.BlockRelations blockRelations;
         public Factor.PlayerState playerState;
         public Factor.Armor armor;
@@ -186,7 +166,6 @@ public class BodyTemperature implements Feature {
         private void init(BodyTemperature feature) throws SerializationException {
             feature.factors.clear();
             feature.factors.add(climate);
-            feature.factors.add(wind);
             feature.factors.add(blockRelations);
             feature.factors.add(playerState);
             feature.factors.add(armor);
