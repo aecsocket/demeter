@@ -1,78 +1,121 @@
 package com.gitlab.aecsocket.natura.feature;
 
+import com.gitlab.aecsocket.minecommons.core.Ticks;
+import com.gitlab.aecsocket.minecommons.core.scheduler.Task;
+import com.gitlab.aecsocket.minecommons.core.serializers.Serializers;
 import com.gitlab.aecsocket.natura.NaturaPlugin;
-import com.gitlab.aecsocket.natura.util.TimeUtils;
-import com.gitlab.aecsocket.natura.util.WorldConfigManager;
-import com.gitlab.aecsocket.unifiedframework.core.scheduler.Task;
-import com.gitlab.aecsocket.unifiedframework.core.util.Utils;
+import com.gitlab.aecsocket.natura.util.WorldConfigs;
+import it.unimi.dsi.fastutil.objects.Object2DoubleArrayMap;
+import it.unimi.dsi.fastutil.objects.Object2DoubleMap;
 import org.bukkit.Bukkit;
 import org.bukkit.GameRule;
 import org.bukkit.World;
+import org.spongepowered.configurate.ConfigurateException;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.serialize.SerializationException;
+import org.spongepowered.configurate.serialize.TypeSerializer;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.lang.reflect.Type;
+import java.util.UUID;
 
-public class TimeDilation implements Feature {
+public class TimeDilation extends Feature<TimeDilation.Config> {
     public static final String ID = "time_dilation";
 
-    @ConfigSerializable
-    public static class Config {
-        public boolean enabled;
-        public WorldConfigManager<WorldConfig> worlds;
+    public record Factor(double value) {
+        public static final int DAY_TIME = 24_000;
+        public static final Factor DEFAULT = new Factor(DAY_TIME);
+
+        public static final class Serializer implements TypeSerializer<Factor> {
+            @Override
+            public void serialize(Type type, Factor obj, ConfigurationNode node) throws SerializationException {
+                if (obj == null) node.set(null);
+                else {
+                    node.set(obj.value);
+                }
+            }
+
+            @Override
+            public Factor deserialize(Type type, ConfigurationNode node) throws SerializationException {
+                String arg = Serializers.require(node, String.class);
+                if (arg.length() == 0)
+                    throw new SerializationException(node, type, "Must be time dilation factor");
+
+                char last = arg.charAt(arg.length() - 1);
+                if (last == 'x' || last == '%') {
+                    // relative
+                    double value;
+                    try {
+                        value = Double.parseDouble(arg.substring(0, arg.length() - 1));
+                    } catch (NumberFormatException e) {
+                        throw new SerializationException(node, type, "Invalid number format for relative factor", e);
+                    }
+                    return new Factor(last == 'x' ? value : value / 100);
+                }
+                // absolute time
+                try {
+                    return new Factor((double) DAY_TIME / Ticks.ticks(arg));
+                } catch (NumberFormatException e) {
+                    throw new SerializationException(node, type, "Invalid absolute factor format", e);
+                }
+            }
+        }
     }
 
     @ConfigSerializable
-    public static class WorldConfig {
-        private static final WorldConfig empty = new WorldConfig();
-
-        public boolean enabled;
-        public String factor;
-        public transient double durationFactor;
+    public record Config(
+            boolean enabled,
+            WorldConfigs<WorldConfig> worlds
+    ) {
+        public static final Config DEFAULT = new Config(false, new WorldConfigs<>());
     }
 
-    private final NaturaPlugin plugin;
-    private Config config;
-    private final Map<World, Double> progress = new HashMap<>();
+    @ConfigSerializable
+    public record WorldConfig(
+            Factor factor
+    ) {
+        public static final WorldConfig DEFAULT = new WorldConfig(Factor.DEFAULT);
+    }
+
+    private final Object2DoubleMap<UUID> progress = new Object2DoubleArrayMap<>();
 
     public TimeDilation(NaturaPlugin plugin) {
-        this.plugin = plugin;
+        super(plugin);
     }
-
-    public NaturaPlugin plugin() { return plugin; }
-    public Config config() { return config; }
 
     @Override public String id() { return ID; }
 
     @Override
-    public void acceptConfig(ConfigurationNode config) throws SerializationException {
-        this.config = config.get(Config.class);
-        for (WorldConfig cfg : this.config.worlds.worlds().values()) {
-            cfg.durationFactor = 1 / TimeUtils.timeMultiplier(cfg.factor);
-        }
+    public void load() throws ConfigurateException {
+        config = plugin.setting(Config.DEFAULT, (n, d) -> n.get(Config.class, d), ID);
     }
 
     @Override
-    public void start() {
-        if (!config.enabled) return;
+    public void enable() {
+        if (!config.enabled)
+            return;
         plugin.scheduler().run(Task.repeating(ctx -> {
             for (World world : Bukkit.getWorlds()) {
-                if (!world.getGameRuleValue(GameRule.DO_DAYLIGHT_CYCLE)) continue;
-                WorldConfig cfg = config.worlds.config(world).orElse(WorldConfig.empty);
-                if (!cfg.enabled) continue;
-
-                double progress = this.progress.getOrDefault(world, 0d);
-                progress += cfg.durationFactor;
-                long time = world.getFullTime() - 1;
-                while (progress >= 1) {
-                    --progress;
-                    ++time;
-                }
-                world.setFullTime(time);
-                this.progress.put(world, progress);
+                if (!world.getGameRuleValue(GameRule.DO_DAYLIGHT_CYCLE))
+                    continue;
+                config.worlds.config(world).ifPresent(cfg -> {
+                    if (cfg.factor.value == 1)
+                        return;
+                    double progress = this.progress.getOrDefault(world.getUID(), 0d) + cfg.factor.value;
+                    long time = world.getFullTime();
+                    while (progress >= 1) {
+                        --progress;
+                        ++time;
+                    }
+                    world.setFullTime(time);
+                    this.progress.putIfAbsent(world.getUID(), progress);
+                });
             }
-        }, Utils.MSPT));
+        }, Ticks.MSPT));
+    }
+
+    @Override
+    public void disable() {
+
     }
 }

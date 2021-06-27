@@ -1,26 +1,22 @@
 package com.gitlab.aecsocket.natura.feature;
 
-import com.comphenix.protocol.events.PacketEvent;
-import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
-import org.bukkit.event.block.BlockGrowEvent;
-import org.bukkit.event.player.PlayerItemConsumeEvent;
-import org.bukkit.event.weather.WeatherChangeEvent;
-import org.spongepowered.configurate.ConfigurationNode;
-import org.spongepowered.configurate.serialize.SerializationException;
+import com.gitlab.aecsocket.natura.NaturaPlugin;
+import org.spongepowered.configurate.ConfigurateException;
 
-public interface Feature {
-    String id();
+public abstract class Feature<C> {
+    protected final NaturaPlugin plugin;
+    protected C config;
 
-    default void acceptConfig(ConfigurationNode config) throws SerializationException {}
-    default void acceptState(ConfigurationNode state) throws SerializationException {}
+    public Feature(NaturaPlugin plugin) {
+        this.plugin = plugin;
+    }
 
-    default void start() {}
-    default void stop() {}
+    public NaturaPlugin plugin() { return plugin; }
+    public C config() { return config; }
 
-    default void login(PacketEvent event) {}
-    default void mapChunk(PacketEvent event) {}
-    default void respawn(PlayerPostRespawnEvent event) {}
-    default void blockGrow(BlockGrowEvent event) {}
-    default void itemConsume(PlayerItemConsumeEvent event) {}
-    default void weatherChange(WeatherChangeEvent event) {}
+    public abstract String id();
+
+    public abstract void load() throws ConfigurateException;
+    public abstract void enable();
+    public abstract void disable();
 }
