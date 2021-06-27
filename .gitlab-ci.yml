@@ -12,7 +12,7 @@ build:
     - "microdnf install jq"
     - "version='1.17'"
     - "build=$(curl https://papermc.io/api/v2/projects/paper/versions/${version} | jq '.builds[-1]')"
-    - "curl --output paperclip.jar https://papermc.io/api/v2/projects/paper/versions/1.16.5/builds/${build}/downloads/paper-${version}-${build}.jar"
+    - "curl --output paperclip.jar https://papermc.io/api/v2/projects/paper/versions/${version}/builds/${build}/downloads/paper-${version}-${build}.jar"
     - "java -Dpaperclip.install=true -jar paperclip.jar"
     - "mvn package"
   artifacts:
