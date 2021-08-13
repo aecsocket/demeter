@@ -1,26 +1,48 @@
-image: "maven:latest"
+image: gradle:jdk16
 
-cache:
-  paths:
-    - "maven.repository/"
+stages:
+  - build
+  - test
+  - deploy
 
 variables:
-  MAVEN_OPTS: "-Dmaven.repo.local=maven.repository"
+  GRADLE_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/.m2/repository"
+  GRADLE_USER_HOME: "${CI_PROJECT_DIR}/.gradle"
 
 build:
+  stage: build
   script:
-    - "microdnf install jq"
-    - "version='1.17'"
-    - "build=$(curl https://papermc.io/api/v2/projects/paper/versions/${version} | jq '.builds[-1]')"
-    - "curl --output paperclip.jar https://papermc.io/api/v2/projects/paper/versions/${version}/builds/${build}/downloads/paper-${version}-${build}.jar"
-    - "java -Dpaperclip.install=true -jar paperclip.jar"
-    - "mvn package"
+    - "gradle --build-cache assemble shadowJar"
+    - "gradle check"
+    - "gradle publish"
+  cache:
+    key: "$CI_COMMIT_REF_NAME"
+    policy: pull-push
+    paths:
+      - "*/build"
+      - ".gradle"
+      - ".m2/repository"
   artifacts:
     paths:
-      - "*target"
+      - "*/build/libs/*.jar"
+    expire_in: 1 week
 
-deploy:
+pages:
+  stage: deploy
   script:
-    - "mvn deploy -s ci_settings.xml"
+    - "gradle javadoc"
+    - "mv src/site public"
+    - "mkdir -p public/javadoc"
+    - "mv paper/build/docs/javadoc public/javadoc/paper"
+  cache:
+    key: "$CI_COMMIT_REF_NAME"
+    policy: pull
+    paths:
+      - "*/build"
+      - ".gradle"
+      - ".m2/repository"
+  artifacts:
+    paths:
+      - "public"
   only:
-    - "master"
+    - master

@@ -1,6 +1,6 @@
-# Natura
+# Aegean
 
-Natural weather and climate effects
+Paper: Natural weather and climate effects
 
 ---
 
@@ -15,32 +15,12 @@ such as seasons, weather types, and temperature.
 * [Paper >=1.17](https://papermc.io/)
 * [ProtocolLib >=4.6.0 Dev](https://ci.dmulloy2.net/job/ProtocolLib/lastSuccessfulBuild/)
 
-### [Download](https://gitlab.com/aecsocket/natura/-/jobs/artifacts/master/raw/target/Natura.jar?job=build)
+### [Download](https://gitlab.com/aecsocket/aegean/-/jobs/artifacts/master/raw/paper/build/libs/aegean-paper-1.1.jar?job=build)
 
-### Coordinates
+## Q & A
 
-Repository
-```xml
-<repository>
-    <id>gitlab-maven-natura</id>
-    <url>https://gitlab.com/api/v4/projects/25743932/packages/maven</url>
-</repository>
-```
+**Q:** Why was this plugin renamed from Natura to Aegean?
 
-Dependency
-```xml
-<dependency>
-    <groupId>com.gitlab.aecsocket</groupId>
-    <artifactId>natura</artifactId>
-    <version>[VERSION]</version>
-</dependency>
-```
-
-### Configuration
-
-All configuration is stored in the `settings.conf` file. Read that to learn how to configure the plugin.
-
-### API
-
-Both main features - Persistence and DeathCorpses - interact with the Bodies API.
-You can read the Javadocs to get usage information. Javadocs not hosted yet.
+**A:**
+* Using "Natura" would give me terrible SEO since a popular mod already exists with the same name.
+* Also because I went to Greece.
