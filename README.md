@@ -1,4 +1,4 @@
-# Aegean
+# Demeter
 
 Paper: Natural weather and climate effects
 
@@ -13,14 +13,14 @@ such as seasons, weather types, and temperature.
 
 * [Java >=16](https://adoptopenjdk.net/?variant=openjdk16&jvmVariant=hotspot)
 * [Paper >=1.17](https://papermc.io/)
-* [ProtocolLib >=4.6.0 Dev](https://ci.dmulloy2.net/job/ProtocolLib/lastSuccessfulBuild/)
+* [ProtocolLib >=4.6.0](https://www.spigotmc.org/resources/protocollib.1997/)
 
-### [Download](https://gitlab.com/aecsocket/aegean/-/jobs/artifacts/master/raw/paper/build/libs/aegean-paper-1.1.jar?job=build)
+### [Download](https://gitlab.com/aecsocket/demeter/-/jobs/artifacts/master/raw/paper/build/libs/demeter-paper-1.0.jar?job=build)
 
 ## Q & A
 
-**Q:** Why was this plugin renamed from Natura to Aegean?
+**Q:** Why was this plugin renamed from Natura to Demeter?
 
 **A:**
 * Using "Natura" would give me terrible SEO since a popular mod already exists with the same name.
-* Also because I went to Greece.
+* Also because I played Hades.

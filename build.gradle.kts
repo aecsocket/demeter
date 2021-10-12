@@ -4,8 +4,8 @@ plugins {
 }
 
 allprojects {
-    group = "com.gitlab.aecsocket.aegean"
-    version = "1.1"
+    group = "com.gitlab.aecsocket.demeter"
+    version = "1.0"
     description = "Natural weather and climate effects"
 }
 

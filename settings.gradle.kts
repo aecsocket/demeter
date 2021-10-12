@@ -5,6 +5,6 @@ pluginManagement {
     }
 }
 
-rootProject.name = "aegean"
+rootProject.name = "demeter"
 
 include("paper")

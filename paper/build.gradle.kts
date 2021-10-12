@@ -33,7 +33,7 @@ tasks {
                 "https://aecsocket.gitlab.io/minecommons/javadoc/core/",
                 "https://aecsocket.gitlab.io/minecommons/javadoc/paper/",
                 "https://configurate.aoeu.xyz/4.1.1/apidocs/",
-                "https://jd.adventure.kyori.net/api/4.8.1/",
+                "https://jd.adventure.kyori.net/api/4.9.2/",
                 "https://papermc.io/javadocs/paper/1.17/",
                 "https://javadoc.commandframework.cloud/",
                 "https://aadnk.github.io/ProtocolLib/Javadoc/"
@@ -57,11 +57,11 @@ tasks {
 }
 
 bukkit {
-    name = "Aegean"
-    main = "${project.group}.paper.AegeanPlugin"
+    name = "Demeter"
+    main = "${project.group}.paper.DemeterPlugin"
     apiVersion = "1.17"
     depend = listOf("Minecommons", "ProtocolLib")
-    website = "https://gitlab.com/aecsocket/aegean"
+    website = "https://gitlab.com/aecsocket/demeter"
     authors = listOf("aecsocket")
 }
 
