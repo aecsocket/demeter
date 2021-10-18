@@ -19,7 +19,7 @@ public final class WorldsConfig<C> implements Iterable<Map.Entry<String, C>> {
     public Map<String, C> handle() { return handle; }
 
     public Optional<C> get(String key) {
-        return Optional.ofNullable(handle.getOrDefault(key, handle.get(key)));
+        return Optional.ofNullable(handle.getOrDefault(key, handle.get(DEFAULT)));
     }
 
     public Optional<C> get(World key) { return get(key.getName()); }

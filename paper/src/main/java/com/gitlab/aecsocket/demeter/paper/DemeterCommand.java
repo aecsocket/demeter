@@ -1,10 +1,13 @@
 package com.gitlab.aecsocket.demeter.paper;
 
 import cloud.commandframework.ArgumentDescription;
+import cloud.commandframework.bukkit.parsers.WorldArgument;
 import cloud.commandframework.context.CommandContext;
 import com.gitlab.aecsocket.minecommons.paper.plugin.BaseCommand;
 import net.kyori.adventure.text.Component;
+import org.bukkit.World;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -19,6 +22,11 @@ import java.util.Locale;
                 .literal("time-dilation", ArgumentDescription.of("Time dilation feature commands."));
 
         manager.command(timeDilation
+                .literal("day-stage", ArgumentDescription.of("Shows the day stage in a world."))
+                .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the day stage for."))
+                .permission("%s.command.time-dilation.day-stage".formatted(rootName))
+                .handler(c -> handle(c, this::timeDilationDayStage)));
+        manager.command(timeDilation
                 .literal("config", ArgumentDescription.of("Shows the config for this feature."))
                 .permission("%s.command.time-dilation.config".formatted(rootName))
                 .handler(c -> handle(c, this::timeDilationConfig)));
@@ -30,19 +38,34 @@ import java.util.Locale;
                 "key", key);
     }
 
-    private void timeDilationConfig(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
-        var config = plugin.timeDilation().config;
+    private <C> C config(Feature<C> feature) {
+        C config = feature.config;
         if (config == null)
             throw error("no_config",
                     "feature", "time_dilation");
+        return config;
+    }
+
+    private void timeDilationDayStage(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
+        var config = config(plugin.timeDilation());
+        World world = defaultedArg(ctx, "world", pSender, Entity::getWorld);
+        send(sender, locale, "time_dilation.day_stage",
+                "world", world.getName(),
+                "day_stage", lc.safe(locale, "day_stage." + plugin.timeDilation().dayStage(world).key()));
+    }
+
+    private void timeDilationConfig(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
+        var config = config(plugin.timeDilation());
         send(sender, locale, "time_dilation.config.worlds",
                 "amount", config.worlds().handle().size()+"");
         for (var entry : config.worlds()) {
             var worldConfig = entry.getValue();
             send(sender, locale, "time_dilation.config.world",
                     "name", worldConfigName(locale, entry.getKey()),
-                    "duration", worldConfig.duration().asDuration().toString(),
-                    "factor", worldConfig.duration().value()+"");
+                    "day_duration", worldConfig.dayDuration().asDuration().toString(),
+                    "day_factor", worldConfig.dayDuration().value()+"",
+                    "night_duration", worldConfig.nightDuration().asDuration().toString(),
+                    "night_factor", worldConfig.nightDuration().value()+"");
         }
     }
 }

@@ -17,6 +17,15 @@ import java.util.List;
 public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     public static final int BSTATS_ID = 13021;
 
+    /*
+      * -> display
+      seasons ->
+        -> time_dilation
+        -> climate ->
+          -> phenomena
+          -> temperature
+          -> fertility
+     */
     private final PaperScheduler scheduler = new PaperScheduler(this);
     private final TimeDilation timeDilation = new TimeDilation(this);
     private final Seasons seasons = new Seasons(this);
