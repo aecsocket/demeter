@@ -1,8 +1,8 @@
+<img src="banner.svg" width="1024"/>
+
 # Demeter
 
-![](banner.png)
-
-Paper: Natural climate, seasons and weather effects
+Natural climate, seasons and weather effects for Paper
 
 --- 
 
