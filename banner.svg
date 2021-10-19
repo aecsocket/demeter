@@ -30,8 +30,8 @@
      width="1024px"
      inkscape:snap-bbox="true"
      inkscape:zoom="0.50537108"
-     inkscape:cx="858.7749"
-     inkscape:cy="211.72561"
+     inkscape:cx="947.81838"
+     inkscape:cy="118.72464"
      inkscape:window-width="1920"
      inkscape:window-height="1015"
      inkscape:window-x="0"
@@ -196,6 +196,42 @@
          x="355.60001"
          y="0" />
     </clipPath>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Drop Shadow"
+       id="filter8751"
+       x="-0.099204036"
+       y="-0.090708653"
+       width="1.1984081"
+       height="1.1814173">
+      <feFlood
+         flood-opacity="0.501961"
+         flood-color="rgb(0,0,0)"
+         result="flood"
+         id="feFlood8741" />
+      <feComposite
+         in="flood"
+         in2="SourceGraphic"
+         operator="in"
+         result="composite1"
+         id="feComposite8743" />
+      <feGaussianBlur
+         in="composite1"
+         stdDeviation="4"
+         result="blur"
+         id="feGaussianBlur8745" />
+      <feOffset
+         dx="0"
+         dy="0"
+         result="offset"
+         id="feOffset8747" />
+      <feComposite
+         in="SourceGraphic"
+         in2="offset"
+         operator="over"
+         result="composite2"
+         id="feComposite8749" />
+    </filter>
   </defs>
   <g
      inkscape:label="Layer 1"
@@ -14444,6 +14480,7 @@ Y8YMyf8HHOxBjlXQ2MUAAAAASUVORK5CYII=
        id="image7157"
        x="368.89642"
        y="-8.5058591e-06"
-       clip-path="url(#clipPath7723)" />
+       clip-path="url(#clipPath7723)"
+       style="filter:url(#filter8751)" />
   </g>
 </svg>
