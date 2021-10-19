@@ -1,8 +1,7 @@
-image: gradle:jdk16
+image: gradle:jdk17
 
 stages:
   - build
-  - test
   - deploy
 
 variables:
@@ -20,7 +19,7 @@ build:
     policy: pull-push
     paths:
       - "*/build"
-      - ".gradle"
+      - "*/.gradle"
       - ".m2/repository"
   artifacts:
     paths:
@@ -30,7 +29,7 @@ build:
 pages:
   stage: deploy
   script:
-    - "gradle javadoc"
+    - "./gradlew javadoc"
     - "mv src/site public"
     - "mkdir -p public/javadoc"
     - "mv paper/build/docs/javadoc public/javadoc/paper"
@@ -39,7 +38,7 @@ pages:
     policy: pull
     paths:
       - "*/build"
-      - ".gradle"
+      - "*/.gradle"
       - ".m2/repository"
   artifacts:
     paths:

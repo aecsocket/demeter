@@ -1,8 +1,10 @@
 # Demeter
 
-Paper: Natural weather and climate effects
+![](banner.png)
 
----
+Paper: Natural climate, seasons and weather effects
+
+--- 
 
 This plugin provides several features which imitate real-life natural effects,
 such as seasons, weather types, and temperature.

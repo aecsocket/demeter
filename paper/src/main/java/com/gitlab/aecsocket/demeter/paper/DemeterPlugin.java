@@ -3,7 +3,6 @@ package com.gitlab.aecsocket.demeter.paper;
 import com.gitlab.aecsocket.demeter.paper.feature.Seasons;
 import com.gitlab.aecsocket.demeter.paper.feature.TimeDilation;
 import com.gitlab.aecsocket.minecommons.core.Logging;
-import com.gitlab.aecsocket.minecommons.core.scheduler.Scheduler;
 import com.gitlab.aecsocket.minecommons.paper.plugin.BasePlugin;
 import com.gitlab.aecsocket.minecommons.paper.scheduler.PaperScheduler;
 import org.spongepowered.configurate.ConfigurationNode;

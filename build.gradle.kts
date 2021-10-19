@@ -6,16 +6,11 @@ plugins {
 allprojects {
     group = "com.gitlab.aecsocket.demeter"
     version = "1.0"
-    description = "Natural weather and climate effects"
+    description = "Natural climate, seasons and weather effects"
 }
 
 subprojects {
     apply<JavaLibraryPlugin>()
-
-    java {
-        targetCompatibility = JavaVersion.toVersion(16)
-        sourceCompatibility = JavaVersion.toVersion(16)
-    }
 
     repositories {
         //mavenLocal()
@@ -31,13 +26,13 @@ subprojects {
     tasks {
         compileJava {
             options.encoding = Charsets.UTF_8.name()
-            options.release.set(16)
+            options.release.set(17)
         }
 
         javadoc {
             val opt = options as StandardJavadocDocletOptions
             opt.encoding = Charsets.UTF_8.name()
-            opt.source("16")
+            opt.source("17")
             opt.linkSource(true)
             opt.author(true)
         }
