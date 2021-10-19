@@ -11,9 +11,9 @@ variables:
 build:
   stage: build
   script:
-    - "gradle --build-cache assemble shadowJar"
-    - "gradle check"
-    - "gradle publish"
+    - "./gradlew --build-cache assemble shadowJar"
+    - "./gradlew check"
+    - "./gradlew publish"
   cache:
     key: "$CI_COMMIT_REF_NAME"
     policy: pull-push
