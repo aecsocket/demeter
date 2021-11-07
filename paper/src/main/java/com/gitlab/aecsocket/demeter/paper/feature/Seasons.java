@@ -8,9 +8,11 @@ import com.gitlab.aecsocket.demeter.paper.WorldsConfig;
 import com.gitlab.aecsocket.minecommons.core.Duration;
 import com.gitlab.aecsocket.minecommons.core.Logging;
 import com.gitlab.aecsocket.minecommons.core.biome.Precipitation;
+import com.gitlab.aecsocket.minecommons.core.scheduler.Task;
 import com.gitlab.aecsocket.minecommons.core.serializers.Serializers;
 import com.gitlab.aecsocket.minecommons.core.translation.Localizer;
 import com.gitlab.aecsocket.minecommons.core.vector.cartesian.Vector3;
+import com.gitlab.aecsocket.minecommons.paper.MinecommonsPlugin;
 import com.gitlab.aecsocket.minecommons.paper.biome.BiomeInjector;
 import com.gitlab.aecsocket.minecommons.paper.biome.PaperBiomeData;
 import com.gitlab.aecsocket.minecommons.paper.biome.PaperBiomeEffects;
@@ -21,6 +23,7 @@ import it.unimi.dsi.fastutil.objects.Object2LongMap;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import org.apache.commons.lang.RandomStringUtils;
+import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
@@ -45,15 +48,17 @@ public class Seasons extends Feature<Seasons.Config> {
         public final @Required Map<String, Season> seasons;
         public final @Required WorldsConfig<WorldConfig> worlds;
         public final boolean obfuscateBiomeKeys;
+        public final @Nullable Duration biomeUpdateInterval;
 
-        public Config(Map<String, Season> seasons, WorldsConfig<WorldConfig> worlds, boolean obfuscateBiomeKeys) {
+        public Config(Map<String, Season> seasons, WorldsConfig<WorldConfig> worlds, boolean obfuscateBiomeKeys, @Nullable Duration biomeUpdateInterval) {
             this.seasons = seasons;
             this.worlds = worlds;
             this.obfuscateBiomeKeys = obfuscateBiomeKeys;
+            this.biomeUpdateInterval = biomeUpdateInterval;
         }
 
         private Config() {
-            this(null, null, false);
+            this(null, null, false, Duration.duration(1000 * 60));
         }
 
         void initialize() {
@@ -195,12 +200,17 @@ public class Seasons extends Feature<Seasons.Config> {
                 biomeConfig(biome.getKey());
         }
 
+        public long time(World world, long offset) {
+            return (world.getGameTime() + 6000 + offset) % cycleLengthTicks;
+        }
+
         public long time(World world) {
-            return (world.getFullTime() + 6000) % cycleLengthTicks;
+            return time(world, 0);
         }
 
         public Optional<BiomeConfig> biomeConfig(Key key) {
-            return mappedBiomes.computeIfAbsent(key, k -> {
+            //noinspection PatternValidation
+            return mappedBiomes.computeIfAbsent(Key.key(key.namespace(), key.value()), k -> {
                 for (var biomeConfig : biomes) {
                     if (biomeConfig.biomes.contains(k))
                         return Optional.of(biomeConfig);
@@ -215,7 +225,8 @@ public class Seasons extends Feature<Seasons.Config> {
         public final List<Key> biomes;
         public final @Required List<String> seasons;
         public transient final List<Season> mappedSeasons = new ArrayList<>();
-        public transient final Object2LongMap<Season> starts = new Object2LongArrayMap<>();
+        public transient final Object2LongMap<Season> durations = new Object2LongArrayMap<>();
+        public transient int lastSeasonIndex = 0;
 
         public BiomeConfig(List<Key> biomes, List<String> seasons) {
             this.biomes = biomes;
@@ -236,21 +247,27 @@ public class Seasons extends Feature<Seasons.Config> {
                 totalWeight += season.weight;
             }
 
-            for (var season : mappedSeasons)
-                starts.put(season, (long) (((double) season.weight / totalWeight) * worldConfig.cycleLengthTicks));
+            for (var season : mappedSeasons) {
+                long time = (long) (((double) season.weight / totalWeight) * worldConfig.cycleLengthTicks);
+                durations.put(season, time);
+            }
         }
 
-        public Optional<Season> season(long time) {
+        public record CurrentSeason(Season season, int index) {}
+
+        public Optional<CurrentSeason> season(long time) {
             if (seasons.size() == 0)
                 return Optional.empty();
             if (seasons.size() == 1)
-                return Optional.of(mappedSeasons.get(0));
+                return Optional.of(new CurrentSeason(mappedSeasons.get(0), 0));
 
             long current = 0;
-            for (var entry : starts.object2LongEntrySet()) {
+            int i = 0;
+            for (var entry : durations.object2LongEntrySet()) {
                 current += entry.getLongValue();
                 if (current > time)
-                    return Optional.of(entry.getKey());
+                    return Optional.of(new CurrentSeason(entry.getKey(), i));
+                ++i;
             }
             return Optional.empty();
         }
@@ -276,6 +293,37 @@ public class Seasons extends Feature<Seasons.Config> {
     @Override
     public void enable() {
         BiomeInjector biomeInjector = plugin.biomeInjector();
+
+        if (config.biomeUpdateInterval != null) {
+            plugin.scheduler().run(Task.repeating(ctx -> {
+                Set<World> worldsToUpdate = new HashSet<>();
+                for (var world : Bukkit.getWorlds()) {
+                    boolean[] added = new boolean[]{false};
+                    config.worlds.get(world).ifPresent(worldConfig -> {
+                        for (var biomeConfig : worldConfig.biomes) {
+                            if (added[0])
+                                break;
+                            biomeConfig.season(worldConfig.time(world)).ifPresent(currentSeason -> {
+                                if (currentSeason.index == biomeConfig.lastSeasonIndex)
+                                    return;
+                                biomeConfig.lastSeasonIndex = currentSeason.index;
+                                worldsToUpdate.add(world);
+                                added[0] = true;
+                            });
+                        }
+                    });
+                }
+
+                for (var world : worldsToUpdate) {
+                    for (var player : world.getPlayers()) {
+                        for (var chunkKey : MinecommonsPlugin.instance().trackedChunks().tracked(player)) {
+                            plugin.biomeInjector().resendBiomes(world.getChunkAt(chunkKey), player);
+                        }
+                    }
+                }
+            }, config.biomeUpdateInterval.ms()));
+        }
+
         var allExisting = new ArrayList<>(biomeInjector.byKey().values());
         for (var season : config.seasons.values()) {
             Int2IntMap mappings = new Int2IntArrayMap();
@@ -308,7 +356,6 @@ public class Seasons extends Feature<Seasons.Config> {
                             case RAIN -> data = data.temperature(0.2f);
                         }
                     }
-
 
                     Key key = existing.key();
                     key = new NamespacedKey(plugin, key.namespace() + "_" + key.value() + "_" +
@@ -344,7 +391,7 @@ public class Seasons extends Feature<Seasons.Config> {
                 int id = biomes[i];
                 Key biomeKey = plugin.biomeInjector().get(id).key();
                 worldConfig.biomeConfig(biomeKey).flatMap(biomeConfig -> biomeConfig.season(time)).ifPresent(season -> {
-                    biomes[j] = biomeMappings.getOrDefault(season, emptyInt2IntMap).getOrDefault(id, id);
+                    biomes[j] = biomeMappings.getOrDefault(season.season, emptyInt2IntMap).getOrDefault(id, id);
                 });
             }
         });
