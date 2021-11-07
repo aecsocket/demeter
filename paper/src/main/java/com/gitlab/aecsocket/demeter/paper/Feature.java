@@ -1,5 +1,6 @@
 package com.gitlab.aecsocket.demeter.paper;
 
+import com.comphenix.protocol.events.PacketEvent;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.serialize.SerializationException;
 
@@ -19,4 +20,6 @@ public abstract class Feature<C> {
     public abstract void configure(ConfigurationNode config) throws SerializationException;
     public abstract void enable();
     public abstract void disable();
+
+    public void mapChunk(PacketEvent event) {}
 }

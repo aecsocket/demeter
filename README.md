@@ -16,6 +16,7 @@ such as seasons, weather types, and temperature.
 * [Java >=16](https://adoptopenjdk.net/?variant=openjdk16&jvmVariant=hotspot)
 * [Paper >=1.17](https://papermc.io/)
 * [ProtocolLib >=4.6.0](https://www.spigotmc.org/resources/protocollib.1997/)
+* [Minecommons >=1.3](https://gitlab.com/aecsocket/minecommons)
 
 ### [Download](https://gitlab.com/aecsocket/demeter/-/jobs/artifacts/master/raw/paper/build/libs/demeter-paper-1.0.jar?job=build)
 

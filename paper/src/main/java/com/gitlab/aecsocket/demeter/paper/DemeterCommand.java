@@ -27,13 +27,13 @@ import java.util.Locale;
                 .permission("%s.command.time-dilation.day-stage".formatted(rootName))
                 .handler(c -> handle(c, this::timeDilationDayStage)));
         manager.command(timeDilation
-                .literal("config", ArgumentDescription.of("Shows the config for this feature."))
-                .permission("%s.command.time-dilation.config".formatted(rootName))
+                .literal("handle", ArgumentDescription.of("Shows the handle for this feature."))
+                .permission("%s.command.time-dilation.handle".formatted(rootName))
                 .handler(c -> handle(c, this::timeDilationConfig)));
     }
 
     private Component worldConfigName(Locale locale, String key) {
-        return lc.safe(locale, PREFIX_COMMAND + ".config.world." +
+        return lc.safe(locale, PREFIX_COMMAND + ".handle.world." +
                 (WorldsConfig.DEFAULT.equals(key) ? "default" : "normal"),
                 "key", key);
     }
@@ -56,11 +56,11 @@ import java.util.Locale;
 
     private void timeDilationConfig(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
         var config = config(plugin.timeDilation());
-        send(sender, locale, "time_dilation.config.worlds",
+        send(sender, locale, "time_dilation.handle.worlds",
                 "amount", config.worlds().handle().size()+"");
         for (var entry : config.worlds()) {
             var worldConfig = entry.getValue();
-            send(sender, locale, "time_dilation.config.world",
+            send(sender, locale, "time_dilation.handle.world",
                     "name", worldConfigName(locale, entry.getKey()),
                     "day_duration", worldConfig.dayDuration().asDuration().toString(),
                     "day_factor", worldConfig.dayDuration().value()+"",
