@@ -21,5 +21,8 @@ public abstract class Feature<C> {
     public abstract void enable();
     public abstract void disable();
 
+    public void save(ConfigurationNode node) throws SerializationException {}
+    public void load(ConfigurationNode node) throws SerializationException {}
+
     public void mapChunk(PacketEvent event) {}
 }

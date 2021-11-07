@@ -1,7 +1,6 @@
 package com.gitlab.aecsocket.demeter.paper;
 
 import org.bukkit.World;
-import org.bukkit.block.Biome;
 import org.jetbrains.annotations.NotNull;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Setting;

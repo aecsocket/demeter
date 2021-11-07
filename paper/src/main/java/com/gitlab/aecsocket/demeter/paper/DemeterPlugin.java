@@ -7,10 +7,13 @@ import com.gitlab.aecsocket.demeter.paper.feature.Seasons;
 import com.gitlab.aecsocket.demeter.paper.feature.TimeDilation;
 import com.gitlab.aecsocket.demeter.paper.util.GrassColors;
 import com.gitlab.aecsocket.demeter.paper.util.ImageColors;
+import com.gitlab.aecsocket.minecommons.core.Duration;
 import com.gitlab.aecsocket.minecommons.core.Logging;
+import com.gitlab.aecsocket.minecommons.core.scheduler.Task;
 import com.gitlab.aecsocket.minecommons.paper.biome.BiomeInjector;
 import com.gitlab.aecsocket.minecommons.paper.plugin.BasePlugin;
 import com.gitlab.aecsocket.minecommons.paper.scheduler.PaperScheduler;
+import org.spongepowered.configurate.ConfigurateException;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.objectmapping.ObjectMapper;
 import org.spongepowered.configurate.serialize.SerializationException;
@@ -23,6 +26,7 @@ import java.util.List;
 
 public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     public static final int BSTATS_ID = 13021;
+    public static final String PATH_STATE = "state.conf";
     public static final String PATH_FOLIAGE = "foliage.png";
     public static final String PATH_GRASS = "grass.png";
 
@@ -39,6 +43,7 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     private BiomeInjector biomeInjector;
     private ImageColors foliageColors;
     private GrassColors grassColors;
+    private boolean allowSaving;
 
     private final TimeDilation timeDilation = new TimeDilation(this);
     private final Seasons seasons = new Seasons(this);
@@ -80,6 +85,7 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
         if (biomeInjector != null) {
             biomeInjector.uninjectAll();
         }
+        save();
     }
 
     @Override
@@ -88,6 +94,32 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
         serializers
                 .registerExact(TimeDilation.Factor.class, new TimeDilation.Factor.Serializer())
                 .registerExact(Seasons.ColorModifier.class, new Seasons.ColorModifier.Serializer());
+    }
+
+    public void save() {
+        if (!allowSaving)
+            return;
+        var loader = loader(file(PATH_STATE));
+        ConfigurationNode root;
+        try {
+            root = loader.load();
+        } catch (ConfigurateException e) {
+            root = loader.createNode();
+        }
+        for (var feature : features) {
+            ConfigurationNode featureRoot = root.node(feature.id());
+            try {
+                feature.save(featureRoot);
+            } catch (SerializationException e) {
+                log(Logging.Level.ERROR, e, "Could not save state for feature %s", feature.id());
+            }
+        }
+
+        try {
+            loader.save(root);
+        } catch (ConfigurateException e) {
+            log(Logging.Level.ERROR, e, "Could not save state");
+        }
     }
 
     @Override
@@ -128,6 +160,40 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
             }
         }
         log(Logging.Level.INFO, "Enabled %d feature(s)", enabled);
+
+        if (file(PATH_STATE).exists()) {
+            allowSaving = false;
+            var loader = loader(file(PATH_STATE));
+            try {
+                ConfigurationNode node = loader.load();
+                for (var feature : features) {
+                    try {
+                        feature.load(node.node(feature.id()));
+                    } catch (SerializationException e) {
+                        log(Logging.Level.ERROR, e, "Could not load state for feature %s", feature.id());
+                    }
+                }
+                allowSaving = true;
+            } catch (ConfigurateException e) {
+                log(Logging.Level.ERROR, "Could not load state");
+            }
+        } else {
+            allowSaving = true;
+        }
+
+        long autosaveInterval = setting(Duration.duration(1000 * 30), (n, d) -> n.get(Duration.class, d), "autosave_interval").ms();
+        if (autosaveInterval > 0) {
+            scheduler.run(Task.repeating(ctx -> {
+                if (allowSaving)
+                    save();
+            }, autosaveInterval));
+        }
+    }
+
+    @Override
+    public void reload() {
+        save();
+        super.reload();
     }
 
     @Override

@@ -7,6 +7,7 @@ import com.gitlab.aecsocket.demeter.paper.Feature;
 import com.gitlab.aecsocket.demeter.paper.WorldsConfig;
 import com.gitlab.aecsocket.minecommons.core.Duration;
 import com.gitlab.aecsocket.minecommons.core.Logging;
+import com.gitlab.aecsocket.minecommons.core.Ticks;
 import com.gitlab.aecsocket.minecommons.core.biome.Precipitation;
 import com.gitlab.aecsocket.minecommons.core.scheduler.Task;
 import com.gitlab.aecsocket.minecommons.core.serializers.Serializers;
@@ -16,6 +17,7 @@ import com.gitlab.aecsocket.minecommons.paper.MinecommonsPlugin;
 import com.gitlab.aecsocket.minecommons.paper.biome.BiomeInjector;
 import com.gitlab.aecsocket.minecommons.paper.biome.PaperBiomeData;
 import com.gitlab.aecsocket.minecommons.paper.biome.PaperBiomeEffects;
+import io.leangen.geantyref.TypeToken;
 import it.unimi.dsi.fastutil.ints.Int2IntArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2LongArrayMap;
@@ -163,7 +165,6 @@ public class Seasons extends Feature<Seasons.Config> {
     @ConfigSerializable
     public static final class WorldConfig {
         public final @Required Duration cycleLength;
-        public transient long cycleLengthTicks;
         public final @Required List<BiomeConfig> biomes;
         public transient @Nullable BiomeConfig defaultBiome;
         public transient final Map<Key, Optional<BiomeConfig>> mappedBiomes = new HashMap<>();
@@ -178,7 +179,6 @@ public class Seasons extends Feature<Seasons.Config> {
         }
 
         void initialize(Config config) {
-            cycleLengthTicks = cycleLength.ticks();
             for (var biomeConfig : biomes) {
                 if (biomeConfig.biomes.isEmpty()) {
                     if (defaultBiome == null)
@@ -198,14 +198,6 @@ public class Seasons extends Feature<Seasons.Config> {
 
             for (var biome : Biome.values())
                 biomeConfig(biome.getKey());
-        }
-
-        public long time(World world, long offset) {
-            return (world.getGameTime() + 6000 + offset) % cycleLengthTicks;
-        }
-
-        public long time(World world) {
-            return time(world, 0);
         }
 
         public Optional<BiomeConfig> biomeConfig(Key key) {
@@ -248,9 +240,19 @@ public class Seasons extends Feature<Seasons.Config> {
             }
 
             for (var season : mappedSeasons) {
-                long time = (long) (((double) season.weight / totalWeight) * worldConfig.cycleLengthTicks);
+                long time = (long) (((double) season.weight / totalWeight) * worldConfig.cycleLength.ms());
                 durations.put(season, time);
             }
+        }
+
+        public long startsAt(Season season) {
+            long time = 0;
+            for (var current : mappedSeasons) {
+                if (current.equals(season))
+                    return time;
+                time += durations.getLong(current);
+            }
+            return -1;
         }
 
         public record CurrentSeason(Season season, int index) {}
@@ -275,12 +277,19 @@ public class Seasons extends Feature<Seasons.Config> {
 
     private boolean ready;
     private final Map<Season, Int2IntMap> biomeMappings = new HashMap<>();
+    private final Object2LongMap<UUID> seasonTime = new Object2LongArrayMap<>();
 
     public Seasons(DemeterPlugin plugin) {
         super(plugin);
     }
 
     @Override public String id() { return ID; }
+
+    public Map<Season, Int2IntMap> biomeMappings() { return biomeMappings; }
+    public Object2LongMap<UUID> seasonTime() { return seasonTime; }
+
+    public long time(UUID worldId) { return seasonTime.getOrDefault(worldId, 0); }
+    public long time(World world) { return time(world.getUID()); }
 
     @Override
     public void configure(ConfigurationNode config) throws SerializationException {
@@ -294,6 +303,15 @@ public class Seasons extends Feature<Seasons.Config> {
     public void enable() {
         BiomeInjector biomeInjector = plugin.biomeInjector();
 
+        plugin.scheduler().run(Task.repeating(ctx -> {
+            for (var world : Bukkit.getWorlds()) {
+                config.worlds.get(world).ifPresent(worldConfig -> {
+                    long time = (time(world) + ctx.delta()) % worldConfig.cycleLength.ms();
+                    seasonTime.put(world.getUID(), time);
+                });
+            }
+        }, Ticks.MSPT));
+
         if (config.biomeUpdateInterval != null) {
             plugin.scheduler().run(Task.repeating(ctx -> {
                 Set<World> worldsToUpdate = new HashSet<>();
@@ -303,7 +321,7 @@ public class Seasons extends Feature<Seasons.Config> {
                         for (var biomeConfig : worldConfig.biomes) {
                             if (added[0])
                                 break;
-                            biomeConfig.season(worldConfig.time(world)).ifPresent(currentSeason -> {
+                            biomeConfig.season(time(world)).ifPresent(currentSeason -> {
                                 if (currentSeason.index == biomeConfig.lastSeasonIndex)
                                     return;
                                 biomeConfig.lastSeasonIndex = currentSeason.index;
@@ -376,6 +394,17 @@ public class Seasons extends Feature<Seasons.Config> {
     public void disable() {}
 
     @Override
+    public void save(ConfigurationNode node) throws SerializationException {
+        node.node("season_time").set(seasonTime);
+    }
+
+    @Override
+    public void load(ConfigurationNode node) throws SerializationException {
+        var seasonTime = node.node("season_time").get(new TypeToken<Map<UUID, Long>>(){}, Collections.emptyMap());
+        this.seasonTime.putAll(seasonTime);
+    }
+
+    @Override
     public void mapChunk(PacketEvent event) {
         if (!ready)
             return;
@@ -384,7 +413,7 @@ public class Seasons extends Feature<Seasons.Config> {
 
         World world = player.getWorld();
         config.worlds.get(world).ifPresent(worldConfig -> {
-            long time = worldConfig.time(world);
+            long time = time(world);
             int[] biomes = packet.getIntegerArrays().read(0);
             for (int i = 0; i < biomes.length; i++) {
                 int j = i;
