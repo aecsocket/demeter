@@ -38,7 +38,7 @@ public final class Timeline {
         double current = 0;
         for (var section : sections) {
             double percent = section.percent;
-            int start = (int) (current * length);
+            int start = (int) Math.round(current * length);
             for (int i = start; i < start + (percent * length); i++) {
                 int clamped = Numbers.clamp(i, 0, length - 1);
                 components[clamped] = components[clamped].color(section.color);

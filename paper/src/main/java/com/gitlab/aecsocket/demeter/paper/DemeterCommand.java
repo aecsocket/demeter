@@ -1,14 +1,14 @@
 package com.gitlab.aecsocket.demeter.paper;
 
 import cloud.commandframework.ArgumentDescription;
-import cloud.commandframework.arguments.standard.LongArgument;
 import cloud.commandframework.bukkit.parsers.WorldArgument;
 import cloud.commandframework.context.CommandContext;
 import com.gitlab.aecsocket.demeter.paper.feature.Seasons;
-import com.gitlab.aecsocket.demeter.paper.util.KeyArgument;
 import com.gitlab.aecsocket.demeter.paper.util.SeasonArgument;
 import com.gitlab.aecsocket.demeter.paper.util.Timeline;
 import com.gitlab.aecsocket.minecommons.core.Duration;
+import com.gitlab.aecsocket.minecommons.paper.command.DurationArgument;
+import com.gitlab.aecsocket.minecommons.paper.command.KeyArgument;
 import com.gitlab.aecsocket.minecommons.paper.plugin.BaseCommand;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
@@ -32,6 +32,8 @@ import java.util.stream.Stream;
     public DemeterCommand(DemeterPlugin plugin) throws Exception {
         super(plugin, "demeter",
                 (mgr, root) -> mgr.commandBuilder(root, ArgumentDescription.of("Plugin main command."), "dem"));
+
+        captions.registerMessageFactory(SeasonArgument.ARGUMENT_PARSE_FAILURE_SEASON, captionLocalizer);
 
         var timeDilation = root
                 .literal("time-dilation", ArgumentDescription.of("Time dilation feature commands."));
@@ -79,7 +81,7 @@ import java.util.stream.Stream;
                 .handler(c -> handle(c, this::seasonsTimeGet)));
         manager.command(seasonsTime
                 .literal("set", ArgumentDescription.of("Sets the raw time value of a world."))
-                .argument(LongArgument.of("time"), ArgumentDescription.of("The time to set to, in milliseconds."))
+                .argument(DurationArgument.of("time"), ArgumentDescription.of("The time to set to."))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to set the time for."))
                 .permission("%s.command.seasons.time.set".formatted(rootName))
                 .handler(c -> handle(c, this::seasonsTimeSet)));
@@ -115,9 +117,9 @@ import java.util.stream.Stream;
             var worldConfig = entry.getValue();
             send(sender, locale, "time_dilation.handle.world",
                     "name", worldConfigName(locale, entry.getKey()),
-                    "day_duration", worldConfig.dayDuration().asDuration().toString(),
+                    "day_duration", worldConfig.dayDuration().asDuration().asString(locale),
                     "day_factor", worldConfig.dayDuration().value()+"",
-                    "night_duration", worldConfig.nightDuration().asDuration().toString(),
+                    "night_duration", worldConfig.nightDuration().asDuration().asString(locale),
                     "night_factor", worldConfig.nightDuration().value()+"");
         }
     }
@@ -167,9 +169,8 @@ import java.util.stream.Stream;
                 send(sender, locale, "seasons.set",
                         "world", world.getName(),
                         "season", season.name(lc, locale),
-                        "duration", Duration.duration(startsAt).toString(),
-                        "ms", String.format(locale, "%,d", startsAt),
-                        "was", String.format(locale, "%,d", was));
+                        "now", Duration.duration(startsAt).asString(locale),
+                        "was", Duration.duration(was).asString(locale));
             }, () -> {
                 throw error("no_biome_config",
                         "biome", biome.toString());
@@ -196,8 +197,8 @@ import java.util.stream.Stream;
                                 .complete(progress)
                                 .build(),
                         "world", target.getName(),
-                        "elapsed", String.format(locale, "%.1f", elapsed / msPerMin),
-                        "cycle", String.format(locale, "%.1f", cycle / msPerMin),
+                        "elapsed", Duration.duration(elapsed).asString(locale),
+                        "cycle", Duration.duration(cycle).asString(locale),
                         "percent", String.format(locale, "%.1f", progress * 100));
 
                 for (var biomeConfig : worldConfig.biomes) {
@@ -227,22 +228,20 @@ import java.util.stream.Stream;
         long time = seasons.time(world);
         send(sender, locale, "seasons.time.get",
                 "world", world.getName(),
-                "duration", Duration.duration(time).toString(),
-                "ms", String.format(locale, "%,d", time));
+                "time", Duration.duration(time).asString(locale));
     }
 
     private void seasonsTimeSet(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
         Seasons seasons = plugin.seasons();
         var config = config(seasons);
-        long time = ctx.get("time");
+        Duration time = ctx.get("time");
         World world = defaultedArg(ctx, "world", pSender, Entity::getWorld);
 
         long was = seasons.time(world);
-        seasons.seasonTime().put(world.getUID(), time);
+        seasons.seasonTime().put(world.getUID(), time.ms());
         send(sender, locale, "seasons.time.set",
                 "world", world.getName(),
-                "duration", Duration.duration(time).toString(),
-                "ms", String.format(locale, "%,d", time),
-                "was", String.format(locale, "%,d", was));
+                "now", time.asString(locale),
+                "was", Duration.duration(was).asString(locale));
     }
 }
