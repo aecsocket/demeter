@@ -20,6 +20,41 @@ such as seasons, weather types, and temperature.
 
 ### [Download](https://gitlab.com/aecsocket/demeter/-/jobs/artifacts/master/raw/paper/build/libs/demeter-paper-1.0.jar?job=build)
 
+## Use
+
+### Configuration
+
+The default configuration file is thoroughly documented. See [here](paper/src/main/resources/settings.conf).
+
+### Commands
+
+#### Permissions
+
+For each command, the permission node is `demeter.command.[path-to-command]`.
+
+E.g. `/demeter seasons time set` -> `demeter.command.seasons.time.set`
+
+#### Format
+
+* `<required argument>` 
+* `[optional argument]`
+
+#### Commands
+
+* `/demeter` alias `/dem`
+  * `help` shows usage information (regardless of permission)
+  * `version` shows version information (regardless of permission)
+  * `reload` reloads the plugin's configuration files
+  * `time-dilation`
+    * `status [world]` shows time info for a world, defaults to the sender's world
+  * `seasons`
+    * `get [world] [biome]` gets the season for a world and a biome, defaults to the sender's location
+    * `set <season> [world] [biome]` sets the season clock for a world to correspond to the start of a season
+    * `timeline [world]` shows a timeline of seasons for either a specific world, or all configured worlds
+    * `time`
+      * `get [world]` gets the season clock for a world
+      * `set <time> [world]` sets the season clock for a world, with time expressed as a duration
+
 ## Q & A
 
 **Q:** Why was this plugin renamed from Natura to Demeter?
