@@ -20,6 +20,7 @@ import org.spongepowered.configurate.serialize.SerializationException;
 import org.spongepowered.configurate.serialize.TypeSerializer;
 
 import java.lang.reflect.Type;
+import java.util.*;
 
 public class TimeDilation extends Feature<TimeDilation.Config> {
     public static final String ID = "time_dilation";
@@ -27,12 +28,11 @@ public class TimeDilation extends Feature<TimeDilation.Config> {
     public static final int TICKS_PER_DAY = TICKS_PER_STAGE * 2;
     public static final long MS_PER_STAGE = 1000 * 60 * 10;
 
-    @ConfigSerializable
-    public record Config(
-            @Required WorldsConfig<WorldConfig> worlds
-    ) {}
+    // Utils
 
     public record Factor(double value) {
+        public static final Factor ONE = new Factor(1);
+
         public Duration asDuration() {
             return Duration.duration((long) (MS_PER_STAGE / value));
         }
@@ -73,11 +73,86 @@ public class TimeDilation extends Feature<TimeDilation.Config> {
         }
     }
 
+    public record CycleDuration(Factor day, Factor night) {
+        public static final CycleDuration ONE = new CycleDuration(Factor.ONE, Factor.ONE);
+
+        public Factor get(DayStage stage) {
+            return stage == DayStage.NIGHT ? night : day;
+        }
+
+        public String asString(Locale locale) {
+            return day.asDuration().asString(locale) + " | " + night.asDuration().asString(locale);
+        }
+
+        @Override
+        public String toString() {
+            return asString(Locale.ROOT);
+        }
+
+        public static final class Serializer implements TypeSerializer<CycleDuration> {
+            @Override
+            public void serialize(Type type, @Nullable CycleDuration obj, ConfigurationNode node) throws SerializationException {
+                if (obj == null) node.set(null);
+                else {
+                    node.setList(Factor.class, Arrays.asList(obj.day, obj.night));
+                }
+            }
+
+            @Override
+            public CycleDuration deserialize(Type type, ConfigurationNode node) throws SerializationException {
+                var nodes = node.childrenList();
+                if (nodes.size() != 2)
+                    throw new SerializationException(node, type, "Must be list of [ day duration, night duration ]");
+                return new CycleDuration(
+                        Serializers.require(nodes.get(0), Factor.class),
+                        Serializers.require(nodes.get(1), Factor.class)
+                );
+            }
+        }
+    }
+
+    // Config
+
     @ConfigSerializable
-    public record WorldConfig(
-            @Required Factor dayDuration,
-            @Required Factor nightDuration
-    ) {}
+    public static final class Config {
+        transient TimeDilation feature;
+        public final @Required WorldsConfig<WorldConfig> worlds;
+
+        private Config() {
+            worlds = new WorldsConfig<>();
+        }
+
+        void initialize(TimeDilation feature) {
+            this.feature = feature;
+            for (var worldConfig : worlds.handle().values()) {
+                worldConfig.initialize(this);
+            }
+        }
+    }
+
+    @ConfigSerializable
+    public static final class WorldConfig {
+        transient Config config;
+        public final CycleDuration duration;
+        public final Map<String, CycleDuration> seasons;
+
+        private WorldConfig() {
+            duration = CycleDuration.ONE;
+            seasons = new HashMap<>();
+        }
+
+        void initialize(Config config) {
+            this.config = config;
+        }
+
+        public CycleDuration appliedDuration(World world) {
+            return config.feature.plugin.seasons().config().worlds.get(world)
+                    .flatMap(Seasons.WorldConfig::defaultBiome)
+                    .flatMap(cfg -> cfg.season(world))
+                    .flatMap(season -> Optional.ofNullable(seasons.get(season.season().name())))
+                    .orElse(duration);
+        }
+    }
 
     public enum DayStage {
         DAY     ("day"),
@@ -114,6 +189,9 @@ public class TimeDilation extends Feature<TimeDilation.Config> {
     @Override
     public void configure(ConfigurationNode config) throws SerializationException {
         this.config = config.get(Config.class);
+        if (this.config == null)
+            throw new SerializationException("null");
+        this.config.initialize(this);
     }
 
     @Override
@@ -126,8 +204,8 @@ public class TimeDilation extends Feature<TimeDilation.Config> {
                 if (!world.getGameRuleValue(GameRule.DO_DAYLIGHT_CYCLE))
                     continue;
                 config.worlds.get(world).ifPresent(worldConfig -> {
-                    double elapsed = this.elapsed.getOrDefault(world, 0d) +
-                             (dayStage(world) == DayStage.NIGHT ? worldConfig.nightDuration : worldConfig.dayDuration).value;
+                    CycleDuration duration = worldConfig.appliedDuration(world);
+                    double elapsed = this.elapsed.getOrDefault(world, 0d) + duration.get(dayStage(world)).value;
                     long time = world.getFullTime() - 1;
                     while (elapsed >= 1) {
                         --elapsed;

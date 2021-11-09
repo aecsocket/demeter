@@ -4,6 +4,7 @@ import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.bukkit.parsers.WorldArgument;
 import cloud.commandframework.context.CommandContext;
 import com.gitlab.aecsocket.demeter.paper.feature.Seasons;
+import com.gitlab.aecsocket.demeter.paper.feature.TimeDilation;
 import com.gitlab.aecsocket.demeter.paper.util.SeasonArgument;
 import com.gitlab.aecsocket.demeter.paper.util.Timeline;
 import com.gitlab.aecsocket.minecommons.core.Duration;
@@ -38,14 +39,10 @@ import java.util.stream.Stream;
         var timeDilation = root
                 .literal("time-dilation", ArgumentDescription.of("Time dilation feature commands."));
         manager.command(timeDilation
-                .literal("day-stage", ArgumentDescription.of("Shows the day stage in a world."))
-                .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the day stage for."))
-                .permission("%s.command.time-dilation.day-stage".formatted(rootName))
-                .handler(c -> handle(c, this::timeDilationDayStage)));
-        manager.command(timeDilation
-                .literal("handle", ArgumentDescription.of("Shows the handle for this feature."))
-                .permission("%s.command.time-dilation.handle".formatted(rootName))
-                .handler(c -> handle(c, this::timeDilationConfig)));
+                .literal("status", ArgumentDescription.of("Shows the status of time dilation in a world."))
+                .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the status for."))
+                .permission("%s.command.time-dilation.status".formatted(rootName))
+                .handler(c -> handle(c, this::timeDilationStatus)));
 
         var seasons = root
                 .literal("seasons", ArgumentDescription.of("Seasons feature commands."));
@@ -88,7 +85,7 @@ import java.util.stream.Stream;
     }
 
     private Component worldConfigName(Locale locale, String key) {
-        return lc.safe(locale, PREFIX_COMMAND + ".handle.world." +
+        return lc.safe(locale, PREFIX_COMMAND + ".config.world." +
                 (WorldsConfig.DEFAULT.equals(key) ? "default" : "normal"),
                 "key", key);
     }
@@ -101,27 +98,25 @@ import java.util.stream.Stream;
         return config;
     }
 
-    private void timeDilationDayStage(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
-        var config = config(plugin.timeDilation());
+    private void timeDilationStatus(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
+        TimeDilation timeDilation = plugin.timeDilation();
+        var config = config(timeDilation);
         World world = defaultedArg(ctx, "world", pSender, Entity::getWorld);
-        send(sender, locale, "time_dilation.day_stage",
-                "world", world.getName(),
-                "day_stage", lc.safe(locale, "day_stage." + plugin.timeDilation().dayStage(world).key()));
-    }
 
-    private void timeDilationConfig(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
-        var config = config(plugin.timeDilation());
-        send(sender, locale, "time_dilation.handle.worlds",
-                "amount", config.worlds().handle().size()+"");
-        for (var entry : config.worlds()) {
-            var worldConfig = entry.getValue();
-            send(sender, locale, "time_dilation.handle.world",
-                    "name", worldConfigName(locale, entry.getKey()),
-                    "day_duration", worldConfig.dayDuration().asDuration().asString(locale),
-                    "day_factor", worldConfig.dayDuration().value()+"",
-                    "night_duration", worldConfig.nightDuration().asDuration().asString(locale),
-                    "night_factor", worldConfig.nightDuration().value()+"");
-        }
+        TimeDilation.DayStage dayStage = timeDilation.dayStage(world);
+        Component dayStageLc = lc.safe(locale, "day_stage." + dayStage.key());
+        timeDilation.config.worlds.get(world).ifPresentOrElse(worldConfig -> {
+            send(sender, locale, "time_dilation.status.info",
+                    "world", world.getName(),
+                    "stage", dayStageLc,
+                    "duration", worldConfig.appliedDuration(world).get(dayStage).asDuration().asString(locale),
+                    "total", worldConfig.appliedDuration(world).asString(locale),
+                    "default_total", worldConfig.duration.asString(locale));
+        }, () -> {
+            send(sender, locale, "time_dilation.status.no_info",
+                    "world", world.getName(),
+                    "stage", dayStageLc);
+        });
     }
 
     private void seasonsGet(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
@@ -132,7 +127,7 @@ import java.util.stream.Stream;
 
         config.worlds.get(world).ifPresentOrElse(worldConfig -> {
             worldConfig.biomeConfig(biome).ifPresentOrElse(biomeConfig -> {
-                biomeConfig.season(seasons.time(world)).ifPresentOrElse(season -> {
+                biomeConfig.season(world).ifPresentOrElse(season -> {
                     send(sender, locale, "seasons.get",
                             "world", world.getName(),
                             "biome", biome.toString(),
@@ -165,7 +160,7 @@ import java.util.stream.Stream;
                             "season", season.name());
 
                 long was = seasons.time(world);
-                seasons.seasonTime().put(world.getUID(), startsAt);
+                seasons.time(world, startsAt);
                 send(sender, locale, "seasons.set",
                         "world", world.getName(),
                         "season", season.name(lc, locale),

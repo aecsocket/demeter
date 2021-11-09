@@ -45,34 +45,7 @@ public class Seasons extends Feature<Seasons.Config> {
     public static final String ID = "seasons";
     private static final Int2IntMap emptyInt2IntMap = new Int2IntArrayMap();
 
-    @ConfigSerializable
-    public static final class Config {
-        public final @Required Map<String, Season> seasons;
-        public final @Required WorldsConfig<WorldConfig> worlds;
-        public final boolean obfuscateBiomeKeys;
-        public final @Nullable Duration biomeUpdateInterval;
-
-        public Config(Map<String, Season> seasons, WorldsConfig<WorldConfig> worlds, boolean obfuscateBiomeKeys, @Nullable Duration biomeUpdateInterval) {
-            this.seasons = seasons;
-            this.worlds = worlds;
-            this.obfuscateBiomeKeys = obfuscateBiomeKeys;
-            this.biomeUpdateInterval = biomeUpdateInterval;
-        }
-
-        private Config() {
-            this(null, null, false, Duration.duration(1000 * 60));
-        }
-
-        void initialize() {
-            for (var entry : worlds) {
-                try {
-                    entry.getValue().initialize(this);
-                } catch (Exception e) {
-                    throw new RuntimeException("Could not initialize config for world `" + entry.getKey() + "`", e);
-                }
-            }
-        }
-    }
+    // Utils
 
     public static final class ColorModifier {
         private final Vector3 value;
@@ -162,23 +135,50 @@ public class Seasons extends Feature<Seasons.Config> {
         }
     }
 
+    // Config
+
+    @ConfigSerializable
+    public static final class Config {
+        transient Seasons feature;
+        public final boolean obfuscateBiomeKeys;
+        public final @Nullable Duration chunkUpdateInterval;
+        public final @Required Map<String, Season> seasons;
+        public final @Required WorldsConfig<WorldConfig> worlds;
+
+        private Config() {
+            obfuscateBiomeKeys = false;
+            chunkUpdateInterval = Duration.duration(1000 * 60);
+            seasons = new HashMap<>();
+            worlds = new WorldsConfig<>();
+        }
+
+        void initialize(Seasons feature) {
+            this.feature = feature;
+            for (var entry : worlds) {
+                try {
+                    entry.getValue().initialize(this);
+                } catch (Exception e) {
+                    throw new RuntimeException("Could not initialize config for world `" + entry.getKey() + "`", e);
+                }
+            }
+        }
+    }
+
     @ConfigSerializable
     public static final class WorldConfig {
+        transient Config config;
         public final @Required Duration cycleLength;
         public final @Required List<BiomeConfig> biomes;
         public transient @Nullable BiomeConfig defaultBiome;
         public transient final Map<Key, Optional<BiomeConfig>> mappedBiomes = new HashMap<>();
 
-        public WorldConfig(Duration cycleLength, List<BiomeConfig> biomes) {
-            this.cycleLength = cycleLength;
-            this.biomes = biomes;
-        }
-
         private WorldConfig() {
-            this(null, new ArrayList<>());
+            cycleLength = Duration.duration(0);
+            biomes = new ArrayList<>();
         }
 
         void initialize(Config config) {
+            this.config = config;
             for (var biomeConfig : biomes) {
                 if (biomeConfig.biomes.isEmpty()) {
                     if (defaultBiome == null)
@@ -190,7 +190,7 @@ public class Seasons extends Feature<Seasons.Config> {
 
             for (var biomeConfig : biomes) {
                 try {
-                    biomeConfig.initialize(this, config);
+                    biomeConfig.initialize(this);
                 } catch (Exception e) {
                     throw new RuntimeException("Could not initialize biome config", e);
                 }
@@ -199,6 +199,8 @@ public class Seasons extends Feature<Seasons.Config> {
             for (var biome : Biome.values())
                 biomeConfig(biome.getKey());
         }
+
+        public Optional<BiomeConfig> defaultBiome() { return Optional.ofNullable(defaultBiome); }
 
         public Optional<BiomeConfig> biomeConfig(Key key) {
             //noinspection PatternValidation
@@ -214,22 +216,21 @@ public class Seasons extends Feature<Seasons.Config> {
 
     @ConfigSerializable
     public static final class BiomeConfig {
+        transient WorldConfig worldConfig;
         public final List<Key> biomes;
         public final @Required List<String> seasons;
         public transient final List<Season> mappedSeasons = new ArrayList<>();
         public transient final Object2LongMap<Season> durations = new Object2LongArrayMap<>();
         public transient int lastSeasonIndex = 0;
 
-        public BiomeConfig(List<Key> biomes, List<String> seasons) {
-            this.biomes = biomes;
-            this.seasons = seasons;
-        }
-
         private BiomeConfig() {
-            this(new ArrayList<>(), new ArrayList<>());
+            biomes = new ArrayList<>();
+            seasons = new ArrayList<>();
         }
 
-        void initialize(WorldConfig worldConfig, Config config) {
+        void initialize(WorldConfig worldConfig) {
+            this.worldConfig = worldConfig;
+            Config config = worldConfig.config;
             int totalWeight = 0;
             for (var seasonName : seasons) {
                 Season season = config.seasons.get(seasonName);
@@ -273,6 +274,10 @@ public class Seasons extends Feature<Seasons.Config> {
             }
             return Optional.empty();
         }
+
+        public Optional<CurrentSeason> season(World world) {
+            return season(worldConfig.config.feature.time(world));
+        }
     }
 
     private boolean ready;
@@ -291,11 +296,18 @@ public class Seasons extends Feature<Seasons.Config> {
     public long time(UUID worldId) { return seasonTime.getOrDefault(worldId, 0); }
     public long time(World world) { return time(world.getUID()); }
 
+    public void time(World world, long time) {
+        seasonTime.put(world.getUID(), time);
+        updateChunks(world);
+    }
+
     @Override
     public void configure(ConfigurationNode config) throws SerializationException {
         ready = false;
         this.config = config.get(Config.class);
-        this.config.initialize();
+        if (this.config == null)
+            throw new SerializationException("null");
+        this.config.initialize(this);
         ready = true;
     }
 
@@ -312,34 +324,8 @@ public class Seasons extends Feature<Seasons.Config> {
             }
         }, Ticks.MSPT));
 
-        if (config.biomeUpdateInterval != null) {
-            plugin.scheduler().run(Task.repeating(ctx -> {
-                Set<World> worldsToUpdate = new HashSet<>();
-                for (var world : Bukkit.getWorlds()) {
-                    boolean[] added = new boolean[]{false};
-                    config.worlds.get(world).ifPresent(worldConfig -> {
-                        for (var biomeConfig : worldConfig.biomes) {
-                            if (added[0])
-                                break;
-                            biomeConfig.season(time(world)).ifPresent(currentSeason -> {
-                                if (currentSeason.index == biomeConfig.lastSeasonIndex)
-                                    return;
-                                biomeConfig.lastSeasonIndex = currentSeason.index;
-                                worldsToUpdate.add(world);
-                                added[0] = true;
-                            });
-                        }
-                    });
-                }
-
-                for (var world : worldsToUpdate) {
-                    for (var player : world.getPlayers()) {
-                        for (var chunkKey : MinecommonsPlugin.instance().trackedChunks().tracked(player)) {
-                            plugin.biomeInjector().resendBiomes(world.getChunkAt(chunkKey), player);
-                        }
-                    }
-                }
-            }, config.biomeUpdateInterval.ms()));
+        if (config.chunkUpdateInterval != null) {
+            plugin.scheduler().run(Task.repeating(ctx -> updateChunks(), config.chunkUpdateInterval.ms()));
         }
 
         var allExisting = new ArrayList<>(biomeInjector.byKey().values());
@@ -390,6 +376,39 @@ public class Seasons extends Feature<Seasons.Config> {
         }
     }
 
+    public void forceUpdateChunks(World world) {
+        for (var player : world.getPlayers()) {
+            for (var chunkKey : MinecommonsPlugin.instance().trackedChunks().tracked(player)) {
+                plugin.biomeInjector().resendBiomes(world.getChunkAt(chunkKey), player);
+            }
+        }
+    }
+
+    public void updateChunks(World world) {
+        boolean[] update = new boolean[]{false};
+        config.worlds.get(world).ifPresent(worldConfig -> {
+            for (var biomeConfig : worldConfig.biomes) {
+                if (update[0])
+                    break;
+                biomeConfig.season(world).ifPresent(currentSeason -> {
+                    if (currentSeason.index == biomeConfig.lastSeasonIndex)
+                        return;
+                    biomeConfig.lastSeasonIndex = currentSeason.index;
+                    update[0] = true;
+                });
+            }
+        });
+
+        if (update[0])
+            forceUpdateChunks(world);
+    }
+
+    public void updateChunks() {
+        for (var world : Bukkit.getWorlds()) {
+            updateChunks(world);
+        }
+    }
+
     @Override
     public void disable() {}
 
@@ -419,9 +438,8 @@ public class Seasons extends Feature<Seasons.Config> {
                 int j = i;
                 int id = biomes[i];
                 Key biomeKey = plugin.biomeInjector().get(id).key();
-                worldConfig.biomeConfig(biomeKey).flatMap(biomeConfig -> biomeConfig.season(time)).ifPresent(season -> {
-                    biomes[j] = biomeMappings.getOrDefault(season.season, emptyInt2IntMap).getOrDefault(id, id);
-                });
+                worldConfig.biomeConfig(biomeKey).flatMap(biomeConfig -> biomeConfig.season(time)).ifPresent(season ->
+                        biomes[j] = biomeMappings.getOrDefault(season.season, emptyInt2IntMap).getOrDefault(id, id));
             }
         });
     }
