@@ -3,9 +3,7 @@ package com.gitlab.aecsocket.demeter.paper;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
-import com.gitlab.aecsocket.demeter.paper.feature.Display;
-import com.gitlab.aecsocket.demeter.paper.feature.Seasons;
-import com.gitlab.aecsocket.demeter.paper.feature.TimeDilation;
+import com.gitlab.aecsocket.demeter.paper.feature.*;
 import com.gitlab.aecsocket.demeter.paper.util.GrassColors;
 import com.gitlab.aecsocket.demeter.paper.util.ImageColors;
 import com.gitlab.aecsocket.minecommons.core.ChatPosition;
@@ -21,6 +19,7 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.spongepowered.configurate.ConfigurateException;
 import org.spongepowered.configurate.ConfigurationNode;
@@ -68,8 +67,10 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     private final Display display = new Display(this);
     private final TimeDilation timeDilation = new TimeDilation(this);
     private final Seasons seasons = new Seasons(this);
+    private final Climate climate = new Climate(this);
+    private final Fertility fertility = new Fertility(this);
     private final List<Feature<?>> features = Arrays.asList(
-            display, timeDilation, seasons
+            display, timeDilation, seasons, climate, fertility
     );
 
     public PaperScheduler scheduler() { return scheduler; }
@@ -81,6 +82,8 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     public Display display() { return display; }
     public TimeDilation timeDilation() { return timeDilation; }
     public Seasons seasons() { return seasons; }
+    public Climate climate() { return climate; }
+    public Fertility fertility() { return fertility; }
     public List<Feature<?>> features() { return features; }
 
     public BossBar bossBar(Player player) {
@@ -104,6 +107,8 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     @Override
     public void onEnable() {
         super.onEnable();
+        Bukkit.getPluginManager().registerEvents(new DemeterListener(this), this);
+
         try {
             biomeInjector = new BiomeInjector();
         } catch (NoSuchFieldException | IllegalAccessException e) {

@@ -1,6 +1,7 @@
 package com.gitlab.aecsocket.demeter.paper;
 
 import com.comphenix.protocol.events.PacketEvent;
+import org.bukkit.event.block.BlockGrowEvent;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.serialize.SerializationException;
 
@@ -25,4 +26,5 @@ public abstract class Feature<C> {
     public void load(ConfigurationNode node) throws SerializationException {}
 
     public void mapChunk(PacketEvent event) {}
+    public void blockGrow(BlockGrowEvent event) {}
 }

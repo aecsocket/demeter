@@ -2,7 +2,9 @@ package com.gitlab.aecsocket.demeter.paper;
 
 import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.bukkit.parsers.WorldArgument;
+import cloud.commandframework.bukkit.parsers.location.LocationArgument;
 import cloud.commandframework.context.CommandContext;
+import com.gitlab.aecsocket.demeter.paper.feature.Fertility;
 import com.gitlab.aecsocket.demeter.paper.feature.Seasons;
 import com.gitlab.aecsocket.demeter.paper.feature.TimeDilation;
 import com.gitlab.aecsocket.demeter.paper.util.SeasonArgument;
@@ -15,8 +17,10 @@ import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
+import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -82,8 +86,24 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
                 .literal("set", ArgumentDescription.of("Sets the raw time value of a world."))
                 .argument(DurationArgument.of("time"), ArgumentDescription.of("The time to set to."))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to set the time for."))
-                .permission(PERMISSION_PREFIX + "%s.command.seasons.time.set")
+                .permission(PERMISSION_PREFIX + ".command.seasons.time.set")
                 .handler(c -> handle(c, this::seasonsTimeSet)));
+
+        var fertility = root
+                .literal("fertility", ArgumentDescription.of("Fertility feature commands."));
+        manager.command(fertility
+                .literal("get", ArgumentDescription.of("Gets how fertile a specific block is."))
+                .argument(LocationArgument.optional("location"), ArgumentDescription.of("The block to get fertility for."))
+                .permission(PERMISSION_PREFIX + ".command.fertility.get")
+                .handler(c -> handle(c, this::fertilityGet)));
+    }
+
+    private String formatBlockLocation(Locale locale, Location location) {
+        return String.format(locale, "%,.0f, %,.0f, %,.0f", location.getX(), location.getY(), location.getZ());
+    }
+
+    private String formatPercent(Locale locale, double value) {
+        return String.format(locale, "%.1f", value * 100);
     }
 
     private Component worldConfigName(Locale locale, String key) {
@@ -196,7 +216,7 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
                         "world", target.getName(),
                         "elapsed", Duration.duration(elapsed).asString(locale),
                         "cycle", Duration.duration(cycle).asString(locale),
-                        "percent", String.format(locale, "%.1f", progress * 100));
+                        "percent", formatPercent(locale, progress));
 
                 for (var biomeConfig : worldConfig.biomes) {
                     Timeline timeline = new Timeline(length).complete(progress);
@@ -240,5 +260,24 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
                 "world", world.getName(),
                 "now", time.asString(locale),
                 "was", Duration.duration(was).asString(locale));
+    }
+
+    private void fertilityGet(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
+        Fertility fertility = plugin.fertility();
+        Location location = defaultedArg(ctx, "location", pSender, Entity::getLocation);
+        Block block = location.getBlock();
+
+        var factors = fertility.growthChanceFactors(block);
+        double value = fertility.growthChance(factors);
+        send(sender, locale, "fertility.get.total",
+                "location", formatBlockLocation(locale, location),
+                "fertility", formatPercent(locale, value));
+        for (int i = 0; i < factors.size(); i++) {
+            var factor = factors.get(i);
+            send(sender, locale, "fertility.get.factor",
+                    "index", ""+(i+1),
+                    "key", lc.safe(locale, PREFIX_COMMAND + ".fertility.get.factor_key." + factor.key()),
+                    "fertility", formatPercent(locale, factor.value()));
+        }
     }
 }

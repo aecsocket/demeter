@@ -150,10 +150,8 @@ public class TimeDilation extends Feature<TimeDilation.Config> {
         }
 
         public CycleDuration appliedDuration(World world) {
-            return config.feature.plugin.seasons().config().worlds.get(world)
-                    .flatMap(Seasons.WorldConfig::defaultBiome)
-                    .flatMap(cfg -> cfg.season(world))
-                    .flatMap(season -> Optional.ofNullable(seasons.get(season.season().name())))
+            return config.feature.plugin.seasons().standardSeason(world)
+                    .flatMap(season -> Optional.ofNullable(seasons.get(season.name())))
                     .orElse(duration);
         }
 

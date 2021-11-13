@@ -384,6 +384,13 @@ public class Seasons extends Feature<Seasons.Config> {
         }
     }
 
+    public Optional<Season> standardSeason(World world) {
+        return config.worlds.get(world)
+                .flatMap(WorldConfig::defaultBiome)
+                .flatMap(cfg -> cfg.season(world))
+                .map(ssn -> ssn.season);
+    }
+
     public void updateChunks(World world) {
         boolean[] update = new boolean[]{false};
         config.worlds.get(world).ifPresent(worldConfig -> {

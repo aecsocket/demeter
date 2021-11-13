@@ -12,6 +12,7 @@ import it.unimi.dsi.fastutil.objects.Object2DoubleMap;
 import org.bukkit.Bukkit;
 import org.bukkit.GameRule;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
@@ -20,13 +21,32 @@ import org.spongepowered.configurate.serialize.SerializationException;
 import org.spongepowered.configurate.serialize.TypeSerializer;
 
 import java.lang.reflect.Type;
+import java.util.Optional;
 
 public class Climate extends Feature<Climate.Config> {
     public static final String ID = "climate";
 
-    @ConfigSerializable
-    public record Config(
+    // Utils
+
+    public record State(
+            double temperature,
+            double humidity
     ) {}
+
+    // Config
+
+    @ConfigSerializable
+    public static final class Config {
+        transient Climate feature;
+
+        private Config() {
+
+        }
+
+        void initialize(Climate feature) {
+
+        }
+    }
 
     public Climate(DemeterPlugin plugin) {
         super(plugin);
@@ -37,6 +57,9 @@ public class Climate extends Feature<Climate.Config> {
     @Override
     public void configure(ConfigurationNode config) throws SerializationException {
         this.config = config.get(Config.class);
+        if (this.config == null)
+            throw new SerializationException("null");
+        this.config.initialize(this);
     }
 
     @Override
@@ -47,4 +70,12 @@ public class Climate extends Feature<Climate.Config> {
 
     @Override
     public void disable() {}
+
+    public Optional<State> state(World world, int x, int y, int z) {
+        return Optional.of(new State(0, 0));
+    }
+
+    public Optional<State> state(Block block) {
+        return state(block.getWorld(), block.getX(), block.getY(), block.getZ());
+    }
 }
