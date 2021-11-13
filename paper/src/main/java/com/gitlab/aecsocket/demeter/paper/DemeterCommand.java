@@ -27,6 +27,8 @@ import java.util.Locale;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX;
+
 /* package */ class DemeterCommand extends BaseCommand<DemeterPlugin> {
     private static final double msPerMin = 1000 * 60;
 
@@ -41,7 +43,7 @@ import java.util.stream.Stream;
         manager.command(timeDilation
                 .literal("status", ArgumentDescription.of("Shows the status of time dilation in a world."))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the status for."))
-                .permission("%s.command.time-dilation.status".formatted(rootName))
+                .permission(PERMISSION_PREFIX + ".command.time-dilation.status")
                 .handler(c -> handle(c, this::timeDilationStatus)));
 
         var seasons = root
@@ -52,7 +54,7 @@ import java.util.stream.Stream;
                 .argument(KeyArgument.<CommandSender>newBuilder("biome")
                                 .withSuggestionsProvider((ctx, inp) -> Stream.of(Biome.values()).map(biome -> biome.getKey().toString()).collect(Collectors.toList()))
                                 .asOptional(), ArgumentDescription.of("The biome to get the season for."))
-                .permission("%s.command.seasons.get".formatted(rootName))
+                .permission(PERMISSION_PREFIX + ".command.seasons.get")
                 .handler(c -> handle(c, this::seasonsGet)));
         manager.command(seasons
                 .literal("set", ArgumentDescription.of("Sets the time of a world to correspond with a season."))
@@ -61,12 +63,12 @@ import java.util.stream.Stream;
                 .argument(KeyArgument.<CommandSender>newBuilder("biome")
                         .withSuggestionsProvider((ctx, inp) -> Stream.of(Biome.values()).map(biome -> biome.getKey().toString()).collect(Collectors.toList()))
                         .asOptional(), ArgumentDescription.of("The biome to set the season for."))
-                .permission("%s.command.seasons.set".formatted(rootName))
+                .permission(PERMISSION_PREFIX + ".command.seasons.set")
                 .handler(c -> handle(c, this::seasonsSet)));
         manager.command(seasons
                 .literal("timeline", ArgumentDescription.of("Shows a timeline of all seasons for worlds."))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to show for."))
-                .permission("%s.command.seasons.timeline".formatted(rootName))
+                .permission(PERMISSION_PREFIX + ".command.seasons.timeline")
                 .handler(c -> handle(c, this::seasonsTimeline)));
 
         var seasonsTime = seasons
@@ -74,13 +76,13 @@ import java.util.stream.Stream;
         manager.command(seasonsTime
                 .literal("get", ArgumentDescription.of("Gets the raw time value of a world, in milliseconds."))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to get the time for."))
-                .permission("%s.command.seasons.time.get".formatted(rootName))
+                .permission(PERMISSION_PREFIX + ".command.seasons.time.get")
                 .handler(c -> handle(c, this::seasonsTimeGet)));
         manager.command(seasonsTime
                 .literal("set", ArgumentDescription.of("Sets the raw time value of a world."))
                 .argument(DurationArgument.of("time"), ArgumentDescription.of("The time to set to."))
                 .argument(WorldArgument.optional("world"), ArgumentDescription.of("The world to set the time for."))
-                .permission("%s.command.seasons.time.set".formatted(rootName))
+                .permission(PERMISSION_PREFIX + "%s.command.seasons.time.set")
                 .handler(c -> handle(c, this::seasonsTimeSet)));
     }
 
@@ -180,7 +182,7 @@ import java.util.stream.Stream;
         Seasons seasons = plugin.seasons();
         var config = config(seasons);
         World world = ctx.getOrDefault("world", null);
-        int length = 30;
+        int length = 40;
 
         for (var target : world == null ? Bukkit.getWorlds() : Collections.singleton(world)) {
             config.worlds.get(target).ifPresentOrElse(worldConfig -> {
@@ -233,7 +235,7 @@ import java.util.stream.Stream;
         World world = defaultedArg(ctx, "world", pSender, Entity::getWorld);
 
         long was = seasons.time(world);
-        seasons.seasonTime().put(world.getUID(), time.ms());
+        seasons.time(world, time.ms());
         send(sender, locale, "seasons.time.set",
                 "world", world.getName(),
                 "now", time.asString(locale),

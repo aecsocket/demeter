@@ -3,16 +3,25 @@ package com.gitlab.aecsocket.demeter.paper;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
+import com.gitlab.aecsocket.demeter.paper.feature.Display;
 import com.gitlab.aecsocket.demeter.paper.feature.Seasons;
 import com.gitlab.aecsocket.demeter.paper.feature.TimeDilation;
 import com.gitlab.aecsocket.demeter.paper.util.GrassColors;
 import com.gitlab.aecsocket.demeter.paper.util.ImageColors;
+import com.gitlab.aecsocket.minecommons.core.ChatPosition;
+import com.gitlab.aecsocket.minecommons.core.CollectionBuilder;
 import com.gitlab.aecsocket.minecommons.core.Duration;
 import com.gitlab.aecsocket.minecommons.core.Logging;
 import com.gitlab.aecsocket.minecommons.core.scheduler.Task;
+import com.gitlab.aecsocket.minecommons.core.serializers.ByKeySerializer;
 import com.gitlab.aecsocket.minecommons.paper.biome.BiomeInjector;
 import com.gitlab.aecsocket.minecommons.paper.plugin.BasePlugin;
 import com.gitlab.aecsocket.minecommons.paper.scheduler.PaperScheduler;
+import com.google.common.collect.BiMap;
+import com.google.common.collect.HashBiMap;
+import net.kyori.adventure.bossbar.BossBar;
+import net.kyori.adventure.text.Component;
+import org.bukkit.entity.Player;
 import org.spongepowered.configurate.ConfigurateException;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.objectmapping.ObjectMapper;
@@ -22,14 +31,24 @@ import org.spongepowered.configurate.serialize.TypeSerializerCollection;
 import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     public static final int BSTATS_ID = 13021;
     public static final String PATH_STATE = "state.conf";
     public static final String PATH_FOLIAGE = "foliage.png";
     public static final String PATH_GRASS = "grass.png";
+    public static final String PERMISSION_PREFIX = "demeter";
 
+    private final BiMap<String, ChatPosition> chatPositions = HashBiMap.create(CollectionBuilder.map(new HashMap<>(ChatPosition.VALUES))
+            .put("boss_bar", (viewer, content) -> {
+                if (viewer instanceof Player player)
+                    bossBar(player).name(content);
+            })
+            .get()
+    );
     /*
       * -> display
       seasons ->
@@ -40,25 +59,47 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
           -> fertility
      */
     private final PaperScheduler scheduler = new PaperScheduler(this);
+    private final Map<Player, BossBar> bossBars = new HashMap<>();
     private BiomeInjector biomeInjector;
     private ImageColors foliageColors;
     private GrassColors grassColors;
     private boolean allowSaving;
 
+    private final Display display = new Display(this);
     private final TimeDilation timeDilation = new TimeDilation(this);
     private final Seasons seasons = new Seasons(this);
     private final List<Feature<?>> features = Arrays.asList(
-            timeDilation, seasons
+            display, timeDilation, seasons
     );
 
     public PaperScheduler scheduler() { return scheduler; }
+    public Map<Player, BossBar> bossBars() { return bossBars; }
     public BiomeInjector biomeInjector() { return biomeInjector; }
     public ImageColors foliageColors() { return foliageColors; }
     public GrassColors grassColors() { return grassColors; }
 
+    public Display display() { return display; }
     public TimeDilation timeDilation() { return timeDilation; }
     public Seasons seasons() { return seasons; }
     public List<Feature<?>> features() { return features; }
+
+    public BossBar bossBar(Player player) {
+        return bossBars.computeIfAbsent(player, p -> {
+            BossBar bar = BossBar.bossBar(Component.empty(),
+                    setting(0f, ConfigurationNode::getFloat, "boss_bar", "progress"),
+                    setting(BossBar.Color.WHITE, (n, d) -> n.get(BossBar.Color.class, d), "boss_bar", "color"),
+                    setting(BossBar.Overlay.PROGRESS, (n, d) -> n.get(BossBar.Overlay.class, d), "boss_bar", "overlay"));
+            p.showBossBar(bar);
+            return bar;
+        });
+    }
+
+    public void removeBossBars() {
+        for (var entry : bossBars.entrySet()) {
+            entry.getKey().hideBossBar(entry.getValue());
+        }
+        bossBars.clear();
+    }
 
     @Override
     public void onEnable() {
@@ -82,6 +123,7 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     @Override
     public void onDisable() {
         super.onDisable();
+        removeBossBars();
         if (biomeInjector != null) {
             biomeInjector.uninjectAll();
         }
@@ -92,6 +134,7 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     protected void configOptionsDefaults(TypeSerializerCollection.Builder serializers, ObjectMapper.Factory.Builder mapperFactory) {
         super.configOptionsDefaults(serializers, mapperFactory);
         serializers
+                .registerExact(ChatPosition.class, new ByKeySerializer<>(chatPositions))
                 .registerExact(TimeDilation.Factor.class, new TimeDilation.Factor.Serializer())
                 .registerExact(TimeDilation.CycleDuration.class, new TimeDilation.CycleDuration.Serializer())
                 .registerExact(Seasons.ColorModifier.class, new Seasons.ColorModifier.Serializer());
@@ -193,6 +236,7 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
 
     @Override
     public void reload() {
+        removeBossBars();
         save();
         super.reload();
     }

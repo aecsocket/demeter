@@ -73,8 +73,12 @@ public class TimeDilation extends Feature<TimeDilation.Config> {
         }
     }
 
-    public record CycleDuration(Factor day, Factor night) {
+    public record CycleDuration(Factor day, Factor night, double ratio) {
         public static final CycleDuration ONE = new CycleDuration(Factor.ONE, Factor.ONE);
+
+        public CycleDuration(Factor day, Factor night) {
+            this(day, night, night.value / (day.value + night.value));
+        }
 
         public Factor get(DayStage stage) {
             return stage == DayStage.NIGHT ? night : day;
@@ -151,6 +155,22 @@ public class TimeDilation extends Feature<TimeDilation.Config> {
                     .flatMap(cfg -> cfg.season(world))
                     .flatMap(season -> Optional.ofNullable(seasons.get(season.season().name())))
                     .orElse(duration);
+        }
+
+        public double dayProgress(World world) {
+            double x = world.getFullTime() % 24_000 / 24_000d;
+            // GeoGebra formula: this line passes
+            //  * (0, 0)
+            //  * (0.5, h)
+            //  * (1, 1)
+            // f(x)=If(x<0.5, ((x)/(((0.5)/(h)))), (1-h)*2 (x-0.5)+h)
+            // Here, h = n / (d + n), where:
+            //  * d = day speed multiplier
+            //  * n = night speed multiplier
+            CycleDuration dur = appliedDuration(world);
+            return x < 0.5
+                    ? x / (0.5 / dur.ratio())
+                    : (1 - dur.ratio()) * 2 * (x - 0.5) + dur.ratio();
         }
     }
 
