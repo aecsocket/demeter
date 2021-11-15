@@ -142,7 +142,8 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
                 .registerExact(ChatPosition.class, new ByKeySerializer<>(chatPositions))
                 .registerExact(TimeDilation.Factor.class, new TimeDilation.Factor.Serializer())
                 .registerExact(TimeDilation.CycleDuration.class, new TimeDilation.CycleDuration.Serializer())
-                .registerExact(Seasons.ColorModifier.class, new Seasons.ColorModifier.Serializer());
+                .registerExact(Seasons.ColorModifier.class, new Seasons.ColorModifier.Serializer())
+                .registerExact(Fertility.RangedFactor.class, new Fertility.RangedFactor.Serializer());
     }
 
     public void save() {

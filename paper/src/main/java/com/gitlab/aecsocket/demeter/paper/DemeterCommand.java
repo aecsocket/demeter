@@ -4,6 +4,7 @@ import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.bukkit.parsers.WorldArgument;
 import cloud.commandframework.bukkit.parsers.location.LocationArgument;
 import cloud.commandframework.context.CommandContext;
+import com.gitlab.aecsocket.demeter.paper.feature.Climate;
 import com.gitlab.aecsocket.demeter.paper.feature.Fertility;
 import com.gitlab.aecsocket.demeter.paper.feature.Seasons;
 import com.gitlab.aecsocket.demeter.paper.feature.TimeDilation;
@@ -89,6 +90,14 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
                 .permission(PERMISSION_PREFIX + ".command.seasons.time.set")
                 .handler(c -> handle(c, this::seasonsTimeSet)));
 
+        var climate = root
+                .literal("climate", ArgumentDescription.of("Climate feature commands."));
+        manager.command(climate
+                .literal("get", ArgumentDescription.of("Gets the climate at a specific block."))
+                .argument(LocationArgument.optional("location"), ArgumentDescription.of("The block to get the climate at."))
+                .permission(PERMISSION_PREFIX + ".command.climate.get")
+                .handler(c -> handle(c, this::climateGet)));
+
         var fertility = root
                 .literal("fertility", ArgumentDescription.of("Fertility feature commands."));
         manager.command(fertility
@@ -104,6 +113,12 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
 
     private String formatPercent(Locale locale, double value) {
         return String.format(locale, "%.1f", value * 100);
+    }
+
+    private Component formatState(Locale locale, Climate.State state) {
+        return lc.safe(locale, "climate_state",
+                "temperature", String.format(locale, "%,.2f", state.temperature()),
+                "humidity", formatPercent(locale, state.humidity()));
     }
 
     private Component worldConfigName(Locale locale, String key) {
@@ -262,9 +277,29 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
                 "was", Duration.duration(was).asString(locale));
     }
 
+    private void climateGet(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
+        Climate climate = plugin.climate();
+        Location location = defaultedArg(ctx, "location", pSender, Entity::getLocation);
+        Block block = location.getBlock();
+
+        var factors = climate.stateFactors(block);
+        Climate.State state = climate.state(factors);
+        send(sender, locale, "climate.get.total",
+                "location", formatBlockLocation(locale, location),
+                "state", formatState(locale, state));
+        for (int i = 0; i < factors.size(); i++) {
+            var factor = factors.get(i);
+            send(sender, locale, "climate.get.factor",
+                    "index", ""+(i+1),
+                    "key", lc.safe(locale, PREFIX_COMMAND + ".climate.get.factor_key." + factor.key()),
+                    "state", formatState(locale, factor.value()));
+        }
+    }
+
     private void fertilityGet(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
         Fertility fertility = plugin.fertility();
-        Location location = defaultedArg(ctx, "location", pSender, Entity::getLocation);
+        // if standing on farmland, will make it target the crop instead of the farmland
+        Location location = defaultedArg(ctx, "location", pSender, Entity::getLocation).add(0, 0.1, 0);
         Block block = location.getBlock();
 
         var factors = fertility.growthChanceFactors(block);
