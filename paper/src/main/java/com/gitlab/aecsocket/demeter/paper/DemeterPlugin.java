@@ -19,6 +19,7 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.spongepowered.configurate.ConfigurateException;
@@ -41,7 +42,9 @@ public class DemeterPlugin extends BasePlugin<DemeterPlugin> {
     public static final String PATH_GRASS = "grass.png";
     public static final String PERMISSION_PREFIX = "demeter";
 
-    private final BiMap<String, ChatPosition> chatPositions = HashBiMap.create(CollectionBuilder.map(new HashMap<>(ChatPosition.VALUES))
+    // TODO do not attempt to do anything if no foliage/grass imgs found
+
+    private final BiMap<String, ChatPosition> chatPositions = HashBiMap.create(CollectionBuilder.map(new HashMap<String, ChatPosition>(ChatPosition.Named.BY_NAME))
             .put("boss_bar", (viewer, content) -> {
                 if (viewer instanceof Player player)
                     bossBar(player).name(content);

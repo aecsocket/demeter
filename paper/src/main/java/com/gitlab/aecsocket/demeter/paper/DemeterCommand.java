@@ -36,6 +36,30 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
 
 /* package */ class DemeterCommand extends BaseCommand<DemeterPlugin> {
     private static final double msPerMin = 1000 * 60;
+    public static final String ERROR_NO_CONFIG = "error.no_config";
+    public static final String ERROR_NO_WORLD_CONFIG = "error.no_world_config";
+    public static final String ERROR_NO_BIOME_CONFIG = "error.no_biome_config";
+    public static final String ERROR_NO_SEASON_CONFIG = "error.no_season_config";
+    public static final String ERROR_NO_SEASON = "error.no_season";
+
+    public static final String BLOCK_LOCATION = "block_location";
+    public static final String CLIMATE_STATE = "climate_state";
+    public static final String DAY_STAGE = "day_stage";
+
+    public static final String COMMAND_TIME_DILATION_STATUS_INFO = "command.time_dilation.status.info";
+    public static final String COMMAND_TIME_DILATION_STATUS_NO_INFO = "command.time_dilation.status.no_info";
+    public static final String COMMAND_SEASONS_GET = "command.seasons.get";
+    public static final String COMMAND_SEASONS_SET = "command.seasons.set";
+    public static final String COMMAND_SEASONS_TIMELINE_WORLD = "command.seasons.timeline.world";
+    public static final String COMMAND_SEASONS_TIMELINE_ENTRY = "command.seasons.timeline.entry";
+    public static final String COMMAND_SEASONS_TIME_GET = "command.seasons.time.get";
+    public static final String COMMAND_SEASONS_TIME_SET = "command.seasons.time.set";
+    public static final String COMMAND_CLIMATE_GET_TOTAL = "command.climate.get.total";
+    public static final String COMMAND_CLIMATE_GET_FACTOR = "command.climate.get.factor";
+    public static final String COMMAND_CLIMATE_GET_FACTOR_KEY = "command.climate.get.factor_key";
+    public static final String COMMAND_FERTILITY_GET_TOTAL = "command.fertility.get.total";
+    public static final String COMMAND_FERTILITY_GET_FACTOR = "command.fertility.get.factor";
+    public static final String COMMAND_FERTILITY_GET_FACTOR_KEY = "command.fertility.get.factor_key";
 
     public DemeterCommand(DemeterPlugin plugin) throws Exception {
         super(plugin, "demeter",
@@ -107,31 +131,28 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
                 .handler(c -> handle(c, this::fertilityGet)));
     }
 
-    private String formatBlockLocation(Locale locale, Location location) {
-        return String.format(locale, "%,.0f, %,.0f, %,.0f", location.getX(), location.getY(), location.getZ());
+    private Component fBlockLocation(Locale locale, Location location) {
+        return i18n.line(locale, BLOCK_LOCATION,
+                c -> c.format("x", "%,.0f", location.getX()),
+                c -> c.format("y", "%,.0f", location.getY()),
+                c -> c.format("z", "%,.0f", location.getZ()));
     }
 
-    private String formatPercent(Locale locale, double value) {
-        return String.format(locale, "%.1f", value * 100);
+    private Component fState(Locale locale, Climate.State state) {
+        return i18n.line(locale, CLIMATE_STATE,
+                c -> c.format("temperature", "%,.2f", state.temperature()),
+                c -> c.format("humidity", "%,.1f", state.humidity() * 100));
     }
 
-    private Component formatState(Locale locale, Climate.State state) {
-        return lc.safe(locale, "climate_state",
-                "temperature", String.format(locale, "%,.2f", state.temperature()),
-                "humidity", formatPercent(locale, state.humidity()));
-    }
-
-    private Component worldConfigName(Locale locale, String key) {
-        return lc.safe(locale, PREFIX_COMMAND + ".config.world." +
-                (WorldsConfig.DEFAULT.equals(key) ? "default" : "normal"),
-                "key", key);
+    private Component fDayStage(Locale locale, TimeDilation.DayStage stage) {
+        return i18n.line(locale, DAY_STAGE + "." + stage.key());
     }
 
     private <C> C config(Feature<C> feature) {
         C config = feature.config;
         if (config == null)
-            throw error("no_config",
-                    "feature", "time_dilation");
+            throw error(ERROR_NO_CONFIG,
+                    c -> c.of("feature", feature.id()));
         return config;
     }
 
@@ -140,19 +161,19 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
         var config = config(timeDilation);
         World world = defaultedArg(ctx, "world", pSender, Entity::getWorld);
 
-        TimeDilation.DayStage dayStage = timeDilation.dayStage(world);
-        Component dayStageLc = lc.safe(locale, "day_stage." + dayStage.key());
+        TimeDilation.DayStage stage = timeDilation.dayStage(world);
+        Component dayStageLc = fDayStage(locale, stage);
         timeDilation.config.worlds.get(world).ifPresentOrElse(worldConfig -> {
-            send(sender, locale, "time_dilation.status.info",
-                    "world", world.getName(),
-                    "stage", dayStageLc,
-                    "duration", worldConfig.appliedDuration(world).get(dayStage).asDuration().asString(locale),
-                    "total", worldConfig.appliedDuration(world).asString(locale),
-                    "default_total", worldConfig.duration.asString(locale));
+            send(sender, locale, COMMAND_TIME_DILATION_STATUS_INFO,
+                    c -> c.of("world", world.getName()),
+                    c -> c.of("stage", dayStageLc),
+                    c -> c.of("duration", worldConfig.appliedDuration(world).get(stage).asDuration().asString(locale)),
+                    c -> c.of("total", worldConfig.appliedDuration(world).asString(locale)),
+                    c -> c.of("default_total", worldConfig.duration.asString(locale)));
         }, () -> {
-            send(sender, locale, "time_dilation.status.no_info",
-                    "world", world.getName(),
-                    "stage", dayStageLc);
+            send(sender, locale, COMMAND_TIME_DILATION_STATUS_NO_INFO,
+                    c -> c.of("world", world.getName()),
+                    c -> c.of("stage", dayStageLc));
         });
     }
 
@@ -165,20 +186,20 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
         config.worlds.get(world).ifPresentOrElse(worldConfig -> {
             worldConfig.biomeConfig(biome).ifPresentOrElse(biomeConfig -> {
                 biomeConfig.season(world).ifPresentOrElse(season -> {
-                    send(sender, locale, "seasons.get",
-                            "world", world.getName(),
-                            "biome", biome.toString(),
-                            "season", season.season().name(lc, locale));
+                    send(sender, locale, COMMAND_SEASONS_GET,
+                            c -> c.of("world", world.getName()),
+                            c -> c.of("biome", biome),
+                            c -> c.of("season", season.season()));
                 }, () -> {
-                    throw error("no_season");
+                    throw error(ERROR_NO_SEASON);
                 });
             }, () -> {
-                throw error("no_biome_config",
-                        "biome", biome.toString());
+                throw error(ERROR_NO_BIOME_CONFIG,
+                        c -> c.of("biome", biome));
             });
         }, () -> {
-            throw error("no_world_config",
-                    "world", world.getName());
+            throw error(ERROR_NO_WORLD_CONFIG,
+                    c -> c.of("world", world.getName()));
         });
     }
 
@@ -193,23 +214,23 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
             worldConfig.biomeConfig(biome).ifPresentOrElse(biomeConfig -> {
                 long startsAt = biomeConfig.startsAt(season);
                 if (startsAt == -1)
-                    throw error("no_season_config",
-                            "season", season.name());
+                    throw error(ERROR_NO_SEASON_CONFIG,
+                            c -> c.of("season", season.name()));
 
                 long was = seasons.time(world);
                 seasons.time(world, startsAt);
-                send(sender, locale, "seasons.set",
-                        "world", world.getName(),
-                        "season", season.name(lc, locale),
-                        "now", Duration.duration(startsAt).asString(locale),
-                        "was", Duration.duration(was).asString(locale));
+                send(sender, locale, COMMAND_SEASONS_SET,
+                        c -> c.of("world", world.getName()),
+                        c -> c.of("season", season),
+                        c -> c.of("now", Duration.duration(startsAt).asString(locale)),
+                        c -> c.of("was", Duration.duration(was).asString(locale)));
             }, () -> {
-                throw error("no_biome_config",
-                        "biome", biome.toString());
+                throw error(ERROR_NO_BIOME_CONFIG,
+                        c -> c.of("biome", biome));
             });
         }, () -> {
-            throw error("no_world_config",
-                    "world", world.getName());
+            throw error(ERROR_NO_WORLD_CONFIG,
+                    c -> c.of("world", world.getName()));
         });
     }
 
@@ -224,30 +245,30 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
                 long elapsed = seasons.time(target);
                 long cycle = worldConfig.cycleLength.ms();
                 double progress = (double) elapsed / cycle;
-                send(sender, locale, "seasons.timeline.world",
-                        "timeline", new Timeline(length)
+                send(sender, locale, COMMAND_SEASONS_TIMELINE_WORLD,
+                        c -> c.of("timeline", new Timeline(length)
                                 .complete(progress)
-                                .build(),
-                        "world", target.getName(),
-                        "elapsed", Duration.duration(elapsed).asString(locale),
-                        "cycle", Duration.duration(cycle).asString(locale),
-                        "percent", formatPercent(locale, progress));
+                                .build()),
+                        c -> c.of("world", target.getName()),
+                        c -> c.of("elapsed", Duration.duration(elapsed).asString(locale)),
+                        c -> c.of("cycle", Duration.duration(cycle).asString(locale)),
+                        c -> c.format("percent", "%,.1f", progress * 100));
 
                 for (var biomeConfig : worldConfig.biomes) {
                     Timeline timeline = new Timeline(length).complete(progress);
                     for (var season : biomeConfig.mappedSeasons) {
                         timeline.add(new Timeline.Section(TextColor.color(season.color().rgb()), (double) biomeConfig.durations.getLong(season) / cycle));
                     }
-                    send(sender, locale, "seasons.timeline.entry",
-                            "timeline", timeline.build(),
-                            "season", biomeConfig.season(elapsed)
-                                    .map(s -> s.season().name(lc, locale))
-                                    .orElse(Component.empty()));
+                    send(sender, locale, COMMAND_SEASONS_TIMELINE_ENTRY,
+                            c -> c.of("timeline", timeline.build()),
+                            c -> c.of("season", biomeConfig.season(elapsed)
+                                    .map(s -> s.season().render(i18n, locale))
+                                    .orElse(Component.empty())));
                 }
             }, () -> {
                 if (world != null)
-                    throw error("no_world_config",
-                            "world", world.getName());
+                    throw error(ERROR_NO_WORLD_CONFIG,
+                            c -> c.of("world", world.getName()));
             });
         }
     }
@@ -258,9 +279,9 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
         World world = defaultedArg(ctx, "world", pSender, Entity::getWorld);
 
         long time = seasons.time(world);
-        send(sender, locale, "seasons.time.get",
-                "world", world.getName(),
-                "time", Duration.duration(time).asString(locale));
+        send(sender, locale, COMMAND_SEASONS_TIME_GET,
+                c -> c.of("world", world.getName()),
+                c -> c.of("time", Duration.duration(time).asString(locale)));
     }
 
     private void seasonsTimeSet(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
@@ -271,48 +292,52 @@ import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX
 
         long was = seasons.time(world);
         seasons.time(world, time.ms());
-        send(sender, locale, "seasons.time.set",
-                "world", world.getName(),
-                "now", time.asString(locale),
-                "was", Duration.duration(was).asString(locale));
+        send(sender, locale, COMMAND_SEASONS_TIME_SET,
+                c -> c.of("world", world.getName()),
+                c -> c.of("now", time.asString(locale)),
+                c -> c.of("was", Duration.duration(was).asString(locale)));
     }
 
     private void climateGet(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
         Climate climate = plugin.climate();
+        config(climate);
         Location location = defaultedArg(ctx, "location", pSender, Entity::getLocation);
         Block block = location.getBlock();
 
         var factors = climate.stateFactors(block);
         Climate.State state = climate.state(factors);
-        send(sender, locale, "climate.get.total",
-                "location", formatBlockLocation(locale, location),
-                "state", formatState(locale, state));
+        send(sender, locale, COMMAND_CLIMATE_GET_TOTAL,
+                c -> c.of("location", fBlockLocation(locale, location)),
+                c -> c.of("state", fState(locale, state)));
         for (int i = 0; i < factors.size(); i++) {
+            int j = i;
             var factor = factors.get(i);
-            send(sender, locale, "climate.get.factor",
-                    "index", ""+(i+1),
-                    "key", lc.safe(locale, PREFIX_COMMAND + ".climate.get.factor_key." + factor.key()),
-                    "state", formatState(locale, factor.value()));
+            send(sender, locale, COMMAND_CLIMATE_GET_FACTOR,
+                    c -> c.of("index", j+1),
+                    c -> c.line("key", COMMAND_CLIMATE_GET_FACTOR_KEY + "." + factor.key()),
+                    c -> c.of("state", fState(locale, factor.value())));
         }
     }
 
     private void fertilityGet(CommandContext<CommandSender> ctx, CommandSender sender, Locale locale, @Nullable Player pSender) {
         Fertility fertility = plugin.fertility();
+        config(fertility);
         // if standing on farmland, will make it target the crop instead of the farmland
         Location location = defaultedArg(ctx, "location", pSender, Entity::getLocation).add(0, 0.1, 0);
         Block block = location.getBlock();
 
         var factors = fertility.growthChanceFactors(block);
         double value = fertility.growthChance(factors);
-        send(sender, locale, "fertility.get.total",
-                "location", formatBlockLocation(locale, location),
-                "fertility", formatPercent(locale, value));
+        send(sender, locale, COMMAND_FERTILITY_GET_TOTAL,
+                c -> c.of("location", fBlockLocation(locale, location)),
+                c -> c.format("fertility", "%,.1f", value * 100));
         for (int i = 0; i < factors.size(); i++) {
+            int j = i;
             var factor = factors.get(i);
-            send(sender, locale, "fertility.get.factor",
-                    "index", ""+(i+1),
-                    "key", lc.safe(locale, PREFIX_COMMAND + ".fertility.get.factor_key." + factor.key()),
-                    "fertility", formatPercent(locale, factor.value()));
+            send(sender, locale, COMMAND_FERTILITY_GET_FACTOR,
+                    c -> c.of("index", j+1),
+                    c -> c.of("key", COMMAND_FERTILITY_GET_FACTOR_KEY + "." + factor.key()),
+                    c -> c.format("fertility", "%,.1f", factor.value() * 100));
         }
     }
 }

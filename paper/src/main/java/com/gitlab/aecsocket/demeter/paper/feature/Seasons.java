@@ -9,9 +9,10 @@ import com.gitlab.aecsocket.minecommons.core.Duration;
 import com.gitlab.aecsocket.minecommons.core.Logging;
 import com.gitlab.aecsocket.minecommons.core.Ticks;
 import com.gitlab.aecsocket.minecommons.core.biome.Precipitation;
+import com.gitlab.aecsocket.minecommons.core.i18n.I18N;
+import com.gitlab.aecsocket.minecommons.core.i18n.Renderable;
 import com.gitlab.aecsocket.minecommons.core.scheduler.Task;
 import com.gitlab.aecsocket.minecommons.core.serializers.Serializers;
-import com.gitlab.aecsocket.minecommons.core.translation.Localizer;
 import com.gitlab.aecsocket.minecommons.core.vector.cartesian.Vector3;
 import com.gitlab.aecsocket.minecommons.paper.MinecommonsPlugin;
 import com.gitlab.aecsocket.minecommons.paper.biome.BiomeInjector;
@@ -129,9 +130,12 @@ public class Seasons extends Feature<Seasons.Config> {
             @Nullable ColorModifier waterColor,
             @Nullable ColorModifier waterFogColor,
             @Nullable Precipitation precipitation
-    ) {
-        public Component name(Localizer lc, Locale locale) {
-            return lc.safe(locale, "season." + name);
+    ) implements Renderable {
+        public static final String SEASON = "season";
+
+        @Override
+        public Component render(I18N i18n, Locale locale) {
+            return i18n.line(locale, SEASON + "." + name);
         }
     }
 

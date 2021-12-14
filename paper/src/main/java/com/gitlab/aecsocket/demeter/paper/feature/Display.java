@@ -3,21 +3,41 @@ package com.gitlab.aecsocket.demeter.paper.feature;
 import com.gitlab.aecsocket.demeter.paper.DemeterPlugin;
 import com.gitlab.aecsocket.demeter.paper.Feature;
 import com.gitlab.aecsocket.minecommons.core.ChatPosition;
+import com.gitlab.aecsocket.minecommons.core.expressions.math.MathNode;
+import com.gitlab.aecsocket.minecommons.core.expressions.node.EvaluationException;
+import com.gitlab.aecsocket.minecommons.core.i18n.I18N;
 import com.gitlab.aecsocket.minecommons.core.scheduler.Task;
-import com.gitlab.aecsocket.minecommons.core.translation.Localizer;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Required;
 import org.spongepowered.configurate.serialize.SerializationException;
 
-import java.util.Locale;
+import java.util.*;
+import java.util.function.Supplier;
 
 import static com.gitlab.aecsocket.demeter.paper.DemeterPlugin.PERMISSION_PREFIX;
 
 public class Display extends Feature<Display.Config> {
+    private static final Component disabled = Component.text("DISABLED PLACEHOLDER", NamedTextColor.RED);
     public static final String ID = "display";
+    public static final String DISPLAY_POSITION = "display.position";
+    public static final String DISPLAY_TIME = "display.time";
+    public static final String DISPLAY_SEASON_NAME = "display.season.name";
+    public static final String DISPLAY_SEASON_NONE = "display.season.none";
+    public static final String DISPLAY_TEMPERATURE = "display.temperature";
+    public static final String DISPLAY_HUMIDITY = "display.humidity";
+
+    public enum Placeholder {
+        TIME,
+        SEASON,
+        TEMPERATURE,
+        HUMIDITY
+    }
 
     // Config
 
@@ -25,15 +45,30 @@ public class Display extends Feature<Display.Config> {
     public static final class Config {
         transient Display feature;
         public final long updateInterval;
-        public final @Required ChatPosition chatPosition;
+        public final @Required Map<ChatPosition, PositionConfig> positions;
+        public final @Nullable MathNode temperatureExpr;
+        public final @Nullable MathNode humidityExpr;
 
         private Config() {
             updateInterval = 1;
-            chatPosition = ChatPosition.ACTION_BAR;
+            positions = new HashMap<>();
+            temperatureExpr = null;
+            humidityExpr = null;
         }
 
         void initialize(Display feature) {
             this.feature = feature;
+        }
+    }
+
+    @ConfigSerializable
+    public static final class PositionConfig {
+        public final @Required String lcKey;
+        public final Set<Placeholder> placeholders;
+
+        private PositionConfig() {
+            lcKey = null;
+            placeholders = new HashSet<>();
         }
     }
 
@@ -51,6 +86,20 @@ public class Display extends Feature<Display.Config> {
         this.config.initialize(this);
     }
 
+    private Component ph(Map<Placeholder, Component> placeholders, Set<Placeholder> enabled, Placeholder key, Supplier<Component> factory) {
+        return enabled.contains(key)
+                ? placeholders.computeIfAbsent(key, f -> factory.get())
+                : disabled;
+    }
+
+    private double expr(@Nullable MathNode expr, double value) {
+        try {
+            return expr == null ? value : expr.set("x", value).eval();
+        } catch (EvaluationException e) {
+            return value;
+        }
+    }
+
     @Override
     public void enable() {
         if (config == null)
@@ -59,32 +108,43 @@ public class Display extends Feature<Display.Config> {
             for (var player : Bukkit.getOnlinePlayers()) {
                 if (!player.hasPermission(PERMISSION_PREFIX + ".feature.display"))
                     continue;
-                Localizer lc = plugin.lc();
+                I18N i18n = plugin.i18n();
                 Locale locale = player.locale();
-
                 World world = player.getWorld();
-                TimeDilation timeDilation = plugin.timeDilation();
-                Seasons seasons = plugin.seasons();
 
-                TimeDilation.DayStage dayStage = timeDilation.dayStage(world);
+                TimeDilation.DayStage dayStage = plugin.timeDilation().dayStage(world);
                 double dayRaw = world.getFullTime() % 24_000 / 24_000d;
                 double dayProgress = dayStage == TimeDilation.DayStage.NONE ? dayRaw
-                        : timeDilation.config().worlds.get(world)
+                        : plugin.timeDilation().config().worlds.get(world)
                             .map(cfg -> cfg.dayProgress(world))
                             .orElse(dayRaw);
                 double hours = ((dayProgress + 0.25) % 1) * 24;
 
-                lc.get(locale, "display.main",
-                        "time", lc.safe(locale, "display.time." + timeDilation.dayStage(world).key(),
-                                        "hour", String.format("%02d", (int) (hours)),
-                                        "minute", String.format("%02d", (int) (hours % 1 * 60))),
-                        "season", seasons.config().worlds.get(world)
-                                        .flatMap(cfg -> cfg.biomeConfig(player.getLocation().getBlock().getBiome().getKey()))
-                                        .flatMap(cfg -> cfg.season(world))
-                                        .map(s -> lc.safe(locale, "display.season.name." + s.season().name()))
-                                        .orElse(lc.safe(locale, "display.season.none"))
-                        )
-                        .ifPresent(c -> config.chatPosition.send(player, c));
+                Climate.State climate = plugin.climate().state(player.getLocation().getBlock());
+
+                Map<Placeholder, Component> phCache = new HashMap<>();
+                for (var entry : config.positions.entrySet()) {
+                    ChatPosition position = entry.getKey();
+                    PositionConfig posConfig = entry.getValue();
+                    Set<Placeholder> phs = posConfig.placeholders;
+                    position.send(player, i18n.line(locale, DISPLAY_POSITION + "." + posConfig.lcKey,
+                            c -> c.of("time", ph(phCache, phs, Placeholder.TIME,
+                                    () -> i18n.line(locale, DISPLAY_TIME + "." + plugin.timeDilation().dayStage(world).key(),
+                                            d -> d.format("hour", "%02d", (int) (hours)),
+                                            d -> d.format("minute", "%02d", (int) (hours % 1 * 60))))),
+                            c -> c.of("season", ph(phCache, phs, Placeholder.SEASON,
+                                    () -> plugin.seasons().config().worlds.get(world)
+                                            .flatMap(cfg -> cfg.biomeConfig(player.getLocation().getBlock().getBiome().getKey()))
+                                            .flatMap(cfg -> cfg.season(world))
+                                            .map(s -> i18n.line(locale, DISPLAY_SEASON_NAME + "." + s.season().name()))
+                                            .orElse(i18n.line(locale, DISPLAY_SEASON_NONE)))),
+                            c -> c.of("temperature", ph(phCache, phs, Placeholder.TEMPERATURE,
+                                    () -> i18n.line(locale, DISPLAY_TEMPERATURE,
+                                            d -> d.of("value", expr(config.temperatureExpr, climate.temperature()))))),
+                            c -> c.of("humidity", ph(phCache, phs, Placeholder.HUMIDITY,
+                                    () -> i18n.line(locale, DISPLAY_HUMIDITY,
+                                            d -> d.of("value", expr(config.humidityExpr, climate.humidity())))))));
+                }
             }
         }, config.updateInterval));
     }
