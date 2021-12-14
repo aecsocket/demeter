@@ -46,12 +46,16 @@ public class Display extends Feature<Display.Config> {
         transient Display feature;
         public final long updateInterval;
         public final @Required Map<ChatPosition, PositionConfig> positions;
+        public final @Required String temperatureFormat;
+        public final @Required String humidityFormat;
         public final @Nullable MathNode temperatureExpr;
         public final @Nullable MathNode humidityExpr;
 
         private Config() {
             updateInterval = 1;
             positions = new HashMap<>();
+            temperatureFormat = "";
+            humidityFormat = "";
             temperatureExpr = null;
             humidityExpr = null;
         }
@@ -100,6 +104,12 @@ public class Display extends Feature<Display.Config> {
         }
     }
 
+    private String sign(double val) {
+        return val > 0 ? "positive"
+                : val < 0 ? "negative"
+                : "zero";
+    }
+
     @Override
     public void enable() {
         if (config == null)
@@ -139,11 +149,14 @@ public class Display extends Feature<Display.Config> {
                                             .map(s -> i18n.line(locale, DISPLAY_SEASON_NAME + "." + s.season().name()))
                                             .orElse(i18n.line(locale, DISPLAY_SEASON_NONE)))),
                             c -> c.of("temperature", ph(phCache, phs, Placeholder.TEMPERATURE,
-                                    () -> i18n.line(locale, DISPLAY_TEMPERATURE,
-                                            d -> d.of("value", expr(config.temperatureExpr, climate.temperature()))))),
+                                    () -> {
+                                double temperature = expr(config.temperatureExpr, climate.temperature());
+                                return i18n.line(locale, DISPLAY_TEMPERATURE + "." + sign(temperature),
+                                                d -> d.format("value", config.temperatureFormat, temperature));
+                                    })),
                             c -> c.of("humidity", ph(phCache, phs, Placeholder.HUMIDITY,
                                     () -> i18n.line(locale, DISPLAY_HUMIDITY,
-                                            d -> d.of("value", expr(config.humidityExpr, climate.humidity())))))));
+                                            d -> d.format("value", config.humidityFormat, expr(config.humidityExpr, climate.humidity())))))));
                 }
             }
         }, config.updateInterval));

@@ -1,26 +1,26 @@
 key,string
 locale,en-US
 
-season.early_spring,"<#78b450>Early Spring"
-season.mid_spring,"<#78b450>Mid Spring"
-season.late_spring,"<#78b450>Late Spring"
+season.early_spring,,"Early Spring"
+season.mid_spring,,"Mid Spring"
+season.late_spring,,"Late Spring"
 
-season.early_summer,"<#e6c81e>Early Summer"
-season.mid_summer,"<#e6c81e>Mid Summer"
-season.late_summer,"<#e6c81e>Late Summer"
+season.early_summer,,"Early Summer"
+season.mid_summer,,"Mid Summer"
+season.late_summer,,"Late Summer"
 
-season.early_autumn,"<#ff8c14>Early Autumn"
-season.mid_autumn,"<#ff8c14>Mid Autumn"
-season.late_autumn,"<#ff8c14>Late Autumn"
+season.early_autumn,,"Early Autumn"
+season.mid_autumn,,"Mid Autumn"
+season.late_autumn,,"Late Autumn"
 
-season.early_winter,"<#6edcfa>Early Winter"
-season.mid_winter,"<#6edcfa>Mid Winter"
-season.late_winter,"<#6edcfa>Late Winter"
+season.early_winter,,"Early Winter"
+season.mid_winter,,"Mid Winter"
+season.late_winter,,"Late Winter"
 
-season.early_wet,"<#4a68ff>Early Wet"
-season.mid_wet,"<#4a68ff>Mid Wet"
-season.late_wet,"<#4a68ff>Late Wet"
+season.early_wet,,"Early Wet"
+season.mid_wet,,"Mid Wet"
+season.late_wet,,"Late Wet"
 
-season.early_dry,"<#e6c81e>Early Dry"
-season.mid_dry,"<#e6c81e>Mid Dry"
-season.late_dry,"<#e6c81e>Late Dry"
+season.early_dry,,"Early Dry"
+season.mid_dry,,"Mid Dry"
+season.late_dry,,"Late Dry"
