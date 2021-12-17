@@ -67,11 +67,11 @@ public class Display extends Feature<Display.Config> {
 
     @ConfigSerializable
     public static final class PositionConfig {
-        public final @Required String lcKey;
+        public final @Required String i18nKey;
         public final Set<Placeholder> placeholders;
 
         private PositionConfig() {
-            lcKey = null;
+            i18nKey = null;
             placeholders = new HashSet<>();
         }
     }
@@ -137,7 +137,7 @@ public class Display extends Feature<Display.Config> {
                     ChatPosition position = entry.getKey();
                     PositionConfig posConfig = entry.getValue();
                     Set<Placeholder> phs = posConfig.placeholders;
-                    position.send(player, i18n.line(locale, DISPLAY_POSITION + "." + posConfig.lcKey,
+                    position.send(player, i18n.line(locale, DISPLAY_POSITION + "." + posConfig.i18nKey,
                             c -> c.of("time", ph(phCache, phs, Placeholder.TIME,
                                     () -> i18n.line(locale, DISPLAY_TIME + "." + plugin.timeDilation().dayStage(world).key(),
                                             d -> d.format("hour", "%02d", (int) (hours)),
