@@ -4,29 +4,21 @@ plugins {
 }
 
 allprojects {
-    group = "com.gitlab.aecsocket.demeter"
-    version = "1.0"
+    group = "com.gitlab.aecsocket"
+    version = "1.1"
     description = "Natural climate, seasons and weather effects"
 }
 
 subprojects {
     apply<JavaLibraryPlugin>()
 
-    repositories {
-        //mavenLocal()
-        mavenCentral()
-        maven("https://oss.sonatype.org/content/repositories/snapshots/")
-        maven("https://gitlab.com/api/v4/projects/27049637/packages/maven") // Minecommons
-    }
-
-    dependencies {
-        testImplementation("org.junit.jupiter", "junit-jupiter", "5.7.1")
+    java {
+        toolchain.languageVersion.set(JavaLanguageVersion.of(17))
     }
 
     tasks {
         compileJava {
             options.encoding = Charsets.UTF_8.name()
-            options.release.set(17)
         }
 
         javadoc {

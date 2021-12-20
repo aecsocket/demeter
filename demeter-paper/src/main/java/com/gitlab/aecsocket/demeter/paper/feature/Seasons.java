@@ -1,6 +1,5 @@
 package com.gitlab.aecsocket.demeter.paper.feature;
 
-import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.events.PacketEvent;
 import com.gitlab.aecsocket.demeter.paper.DemeterPlugin;
 import com.gitlab.aecsocket.demeter.paper.Feature;
@@ -19,8 +18,6 @@ import com.gitlab.aecsocket.minecommons.paper.biome.BiomeInjector;
 import com.gitlab.aecsocket.minecommons.paper.biome.PaperBiomeData;
 import com.gitlab.aecsocket.minecommons.paper.biome.PaperBiomeEffects;
 import io.leangen.geantyref.TypeToken;
-import it.unimi.dsi.fastutil.ints.Int2IntArrayMap;
-import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2LongArrayMap;
 import it.unimi.dsi.fastutil.objects.Object2LongMap;
 import net.kyori.adventure.key.Key;
@@ -44,7 +41,7 @@ import java.util.*;
 
 public class Seasons extends Feature<Seasons.Config> {
     public static final String ID = "seasons";
-    private static final Int2IntMap emptyInt2IntMap = new Int2IntArrayMap();
+    private static final Map<Key, Key> emptyBiomeMappings = new HashMap<>();
 
     // Utils
 
@@ -285,7 +282,7 @@ public class Seasons extends Feature<Seasons.Config> {
     }
 
     private boolean ready;
-    private final Map<Season, Int2IntMap> biomeMappings = new HashMap<>();
+    private final Map<Season, Map<Key, Key>> biomeMappings = new HashMap<>();
     private final Object2LongMap<UUID> seasonTime = new Object2LongArrayMap<>();
 
     public Seasons(DemeterPlugin plugin) {
@@ -294,7 +291,7 @@ public class Seasons extends Feature<Seasons.Config> {
 
     @Override public String id() { return ID; }
 
-    public Map<Season, Int2IntMap> biomeMappings() { return biomeMappings; }
+    public Map<Season, Map<Key, Key>> biomeMappings() { return biomeMappings; }
     public Object2LongMap<UUID> seasonTime() { return seasonTime; }
 
     public long time(UUID worldId) { return seasonTime.getOrDefault(worldId, 0); }
@@ -334,7 +331,7 @@ public class Seasons extends Feature<Seasons.Config> {
 
         var allExisting = new ArrayList<>(biomeInjector.byKey().values());
         for (var season : config.seasons.values()) {
-            Int2IntMap mappings = new Int2IntArrayMap();
+            Map<Key, Key> mappings = new HashMap<>();
             biomeMappings.put(season, mappings);
             for (var existing : allExisting) {
                 try {
@@ -372,7 +369,7 @@ public class Seasons extends Feature<Seasons.Config> {
                         plugin.log(Logging.Level.WARNING, "Cannot inject season biome %s as it already exists", key.toString());
                         continue;
                     }
-                    mappings.put(existing.id(), biomeInjector.inject(key, data.effects(effects)).id());
+                    mappings.put(existing.key(), biomeInjector.inject(key, data.effects(effects)).key());
                 } catch (RuntimeException e) {
                     plugin.log(Logging.Level.WARNING, e, "Could not make custom biome for %s of %s", existing.key(), season.name);
                 }
@@ -439,19 +436,13 @@ public class Seasons extends Feature<Seasons.Config> {
         if (!ready)
             return;
         Player player = event.getPlayer();
-        PacketContainer packet = event.getPacket();
-
         World world = player.getWorld();
         config.worlds.get(world).ifPresent(worldConfig -> {
             long time = time(world);
-            int[] biomes = packet.getIntegerArrays().read(0);
-            for (int i = 0; i < biomes.length; i++) {
-                int j = i;
-                int id = biomes[i];
-                Key biomeKey = plugin.biomeInjector().get(id).key();
-                worldConfig.biomeConfig(biomeKey).flatMap(biomeConfig -> biomeConfig.season(time)).ifPresent(season ->
-                        biomes[j] = biomeMappings.getOrDefault(season.season, emptyInt2IntMap).getOrDefault(id, id));
-            }
+            plugin.biomeInjector().remapBiomes(event, entry -> worldConfig.biomeConfig(entry.key())
+                    .flatMap(biomeConfig -> biomeConfig.season(time))
+                    .map(season -> biomeMappings.getOrDefault(season.season, emptyBiomeMappings).getOrDefault(entry.key(), entry.key()))
+                    .orElse(entry.key()));
         });
     }
 }

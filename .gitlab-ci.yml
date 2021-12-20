@@ -1,4 +1,4 @@
-image: gradle:jdk17
+image: alpine:latest
 
 stages:
   - build
@@ -7,6 +7,10 @@ stages:
 variables:
   GRADLE_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/.m2/repository"
   GRADLE_USER_HOME: "${CI_PROJECT_DIR}/.gradle"
+
+default:
+  before_script:
+    - "apk add --no-cache git openjdk17"
 
 build:
   stage: build

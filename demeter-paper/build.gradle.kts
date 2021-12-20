@@ -1,27 +1,34 @@
 plugins {
     id("java-library")
     id("maven-publish")
-    id("com.github.johnrengelman.shadow") version "7.0.0"
+    id("com.github.johnrengelman.shadow")
 
-    id("net.minecrell.plugin-yml.bukkit") version "0.5.0"
-    id("xyz.jpenilla.run-paper") version "1.0.4"
+    id("net.minecrell.plugin-yml.bukkit")
+    id("xyz.jpenilla.run-paper")
 }
 
+val pluginName = "Demeter"
+
 repositories {
+    mavenLocal()
+    maven("https://oss.sonatype.org/content/repositories/snapshots/")
+    maven("https://gitlab.com/api/v4/projects/27049637/packages/maven") // Minecommons
+
     maven("https://papermc.io/repo/repository/maven-public/")
     maven("https://repo.dmulloy2.net/nexus/repository/public/")
+    mavenCentral()
 }
 
 dependencies {
-    compileOnly("io.papermc.paper", "paper-api", "1.17.1-R0.1-SNAPSHOT") {
+    compileOnly(libs.paper) {
         exclude("junit", "junit")
     }
 
-    implementation("org.bstats", "bstats-bukkit", "2.2.1")
+    implementation(libs.paperBStats)
 
     // Plugins
-    compileOnly("com.gitlab.aecsocket.minecommons", "paper", "1.3")
-    compileOnly("com.comphenix.protocol", "ProtocolLib", "4.7.0")
+    compileOnly(libs.bundles.paperMinecommons)
+    compileOnly(libs.paperProtocolLib)
 }
 
 tasks {
@@ -35,18 +42,17 @@ tasks {
                 "https://www.javadoc.io/doc/io.leangen.geantyref/geantyref/1.3.11/",
                 "https://aecsocket.gitlab.io/minecommons/javadoc/core/",
 
-                "https://papermc.io/javadocs/paper/1.17/",
+                "https://papermc.io/javadocs/paper/1.18/",
                 "https://javadoc.commandframework.cloud/",
                 "https://aadnk.github.io/ProtocolLib/Javadoc/",
-                "https://aecsocket.gitlab.io/minecommons/javadoc/paper/"
+                "https://aecsocket.gitlab.io/minecommons/javadoc/minecommons-paper/"
         )
     }
 
     shadowJar {
-        archiveFileName.set("${rootProject.name}-${project.name}-${rootProject.version}.jar")
         listOf(
                 "org.bstats"
-        ).forEach { relocate(it, "${rootProject.group}.lib.$it") }
+        ).forEach { relocate(it, "${rootProject.group}.${rootProject.name}.lib.$it") }
     }
 
     assemble {
@@ -54,14 +60,14 @@ tasks {
     }
 
     runServer {
-        minecraftVersion("1.17")
+        minecraftVersion("1.18.1")
     }
 }
 
 bukkit {
     name = "Demeter"
-    main = "${project.group}.paper.DemeterPlugin"
-    apiVersion = "1.17"
+    main = "${project.group}.${rootProject.name}.paper.DemeterPlugin"
+    apiVersion = "1.18"
     depend = listOf("Minecommons", "ProtocolLib")
     website = "https://gitlab.com/aecsocket/demeter"
     authors = listOf("aecsocket")

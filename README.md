@@ -1,4 +1,4 @@
-<img src="banner.svg" width="1024"/>
+<img src="banner.png" width="1024"/>
 
 # Demeter
 
@@ -13,18 +13,18 @@ such as seasons, weather types, and temperature.
 
 ### Dependencies
 
-* [Java >=16](https://adoptopenjdk.net/?variant=openjdk16&jvmVariant=hotspot)
-* [Paper >=1.17](https://papermc.io/)
-* [ProtocolLib >=4.6.0](https://www.spigotmc.org/resources/protocollib.1997/)
-* [Minecommons >=1.3](https://gitlab.com/aecsocket/minecommons)
+* [Java >=17](https://adoptium.net/)
+* [Paper >=1.18.1](https://papermc.io/)
+* [Minecommons >=1.4](https://gitlab.com/aecsocket/minecommons)
+* [ProtocolLib >=4.7.0](https://www.spigotmc.org/resources/protocollib.1997/)
 
-### [Download](https://gitlab.com/aecsocket/demeter/-/jobs/artifacts/master/raw/paper/build/libs/demeter-paper-1.0.jar?job=build)
+### [Download Version 1.1](https://gitlab.com/aecsocket/demeter/-/jobs/artifacts/master/raw/demeter-paper/build/libs/demeter-paper-1.1.jar?job=build)
 
 ## Use
 
 ### Configuration
 
-The default configuration file is thoroughly documented. See [here](paper/src/main/resources/settings.conf).
+The default configuration file is thoroughly documented. See [here](demeter-paper/src/main/resources/settings.conf).
 
 ### Commands
 
@@ -54,6 +54,10 @@ E.g. `/demeter seasons time set` -> `demeter.command.seasons.time.set`
     * `time`
       * `get [world]` gets the season clock for a world
       * `set <time> [world]` sets the season clock for a world, with time expressed as a duration
+  * `climate`
+    * `get [location]` gets the climate state at a specific block
+  * `fertility`
+    * `get [location]` gets the fertility at a specific block
 
 ## Q & A
 
