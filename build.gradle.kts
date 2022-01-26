@@ -1,12 +1,30 @@
 plugins {
     id("java-library")
     id("maven-publish")
+    id("io.freefair.aggregate-javadoc")
 }
 
 allprojects {
-    group = "com.gitlab.aecsocket"
-    version = "1.1"
+    group = "com.github.aecsocket"
+    version = "1.1.0-SNAPSHOT"
     description = "Natural climate, seasons and weather effects"
+}
+
+tasks.aggregateJavadoc {
+    val opt = this.options as StandardJavadocDocletOptions
+    opt.encoding = "UTF-8"
+    opt.addBooleanOption("html5", true)
+    opt.addStringOption("-release", "17")
+    opt.linkSource()
+    opt.links(
+            "https://docs.oracle.com/en/java/javase/17/docs/api/",
+            "https://jd.adventure.kyori.net/api/4.9.3/",
+            "https://aecsocket.github.io/minecommons/docs/",
+
+            "https://papermc.io/javadocs/paper/1.18/",
+            "https://javadoc.commandframework.cloud/",
+            "https://aadnk.github.io/ProtocolLib/Javadoc/"
+    )
 }
 
 subprojects {
@@ -21,14 +39,6 @@ subprojects {
             options.encoding = Charsets.UTF_8.name()
         }
 
-        javadoc {
-            val opt = options as StandardJavadocDocletOptions
-            opt.encoding = Charsets.UTF_8.name()
-            opt.source("17")
-            opt.linkSource(true)
-            opt.author(true)
-        }
-
         test {
             useJUnitPlatform()
         }
@@ -37,20 +47,18 @@ subprojects {
 
 publishing {
     publications {
-        create<MavenPublication>("gitlab") {
+        create<MavenPublication>("github") {
             from(components["java"])
         }
     }
 
     repositories {
         maven {
-            url = uri("https://gitlab.com/api/v4/projects/25743932/packages/maven")
-            credentials(HttpHeaderCredentials::class) {
-                name = "Job-Token"
-                value = System.getenv("CI_JOB_TOKEN")
-            }
-            authentication {
-                create<HttpHeaderAuthentication>("header")
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/aecsocket/demeter")
+            credentials {
+                username = project.findProperty("gpr.user") as String? ?: System.getenv("GPR_ACTOR")
+                password = project.findProject("gpr.key") as String? ?: System.getenv("GPR_TOKEN")
             }
         }
     }

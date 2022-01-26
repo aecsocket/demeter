@@ -1,54 +1,26 @@
 [versions]
 
-guava = "31.0.1-jre"
-checkerQual = "3.18.0"
-geantyref = "1.3.11"
-minecommons = "1.4"
-
-configurate = "4.1.2"
-openCsv = "2.3"
-
-adventure = "4.9.3"
-adventureMiniMessage = "4.1.0-SNAPSHOT"
+minecommons = "1.4.0-SNAPSHOT"
 junit = "5.7.2"
 
 # Paper
 paper = "1.18.1-R0.1-SNAPSHOT"
 paperBStats = "2.2.1"
-paperCloud = "1.5.0"
 paperProtocolLib = "4.8.0-SNAPSHOT"
 
 [libraries]
 
-guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
-checkerQual = { group = "org.checkerframework", name = "checker-qual", version.ref = "checkerQual" }
-geantyRef = { group = "io.leangen.geantyref", name = "geantyref", version.ref = "geantyref" }
-minecommons = { group = "com.gitlab.aecsocket", name = "minecommons-core", version.ref = "minecommons" }
-
-configurate = { group = "org.spongepowered", name = "configurate-hocon", version.ref = "configurate" }
-openCsv = { group = "net.sf.opencsv", name = "opencsv", version.ref = "openCsv" }
+minecommons = { group = "com.github.aecsocket", name = "minecommons-core", version.ref = "minecommons" }
 
 paper = { group = "io.papermc.paper", name = "paper-api", version.ref = "paper" }
 paperBStats = { group = "org.bstats", name = "bstats-bukkit", version.ref = "paperBStats" }
-paperCloud = { group = "cloud.commandframework", name = "cloud-paper", version.ref = "paperCloud" }
-paperCloudExtras = { group = "cloud.commandframework", name = "cloud-minecraft-extras", version.ref = "paperCloud" }
-paperMinecommons = { group = "com.gitlab.aecsocket", name = "minecommons-paper", version.ref = "minecommons" }
+paperMinecommons = { group = "com.github.aecsocket", name = "minecommons-paper", version.ref = "minecommons" }
 paperProtocolLib = { group = "com.comphenix.protocol", name = "ProtocolLib", version.ref = "paperProtocolLib" }
-
-adventureApi = { group = "net.kyori", name = "adventure-api", version.ref = "adventure" }
-adventureTextMiniMessage = { group = "net.kyori", name = "adventure-text-minimessage", version.ref = "adventureMiniMessage" }
-adventureTextSerializerGson = { group = "net.kyori", name = "adventure-text-serializer-gson", version.ref = "adventure" }
-adventureTextSerializerPlain = { group = "net.kyori", name = "adventure-text-serializer-plain", version.ref = "adventure" }
-adventureSerializerConfigurate = { group = "net.kyori", name = "adventure-serializer-configurate4", version.ref = "adventure" }
 
 jupiterApi = { group = "org.junit.jupiter", name = "junit-jupiter-api", version.ref = "junit" }
 jupiterEngine = { group = "org.junit.jupiter", name = "junit-jupiter-engine", version.ref = "junit" }
 
 [bundles]
 
-base = [ "guava", "checkerQual", "geantyRef", "configurate", "openCsv" ]
-adventure = [ "adventureApi", "adventureTextMiniMessage", "adventureTextSerializerGson", "adventureTextSerializerPlain", "adventureSerializerConfigurate" ]
 junit = [ "jupiterApi", "jupiterEngine" ]
 paperMinecommons = [ "minecommons", "paperMinecommons" ]
-paperCloud = [ "paperCloud", "paperCloudExtras" ]
-paperLibs = [ "configurate", "openCsv", "adventureSerializerConfigurate", "paperCloud", "paperCloudExtras" ]
