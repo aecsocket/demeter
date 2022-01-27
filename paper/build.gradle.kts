@@ -12,6 +12,7 @@ dependencies {
     }
 
     implementation(libs.paperBStats)
+    compileOnly(libs.bundles.paperCloud)
 
     testImplementation(libs.bundles.junit)
 

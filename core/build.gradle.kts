@@ -8,6 +8,7 @@ dependencies {
     compileOnly(libs.minecommons)
 
     testImplementation(libs.bundles.junit)
+    testImplementation(libs.minecommons)
 }
 
 publishing {

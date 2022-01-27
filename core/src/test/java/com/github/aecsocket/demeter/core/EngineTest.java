@@ -2,8 +2,6 @@ package com.github.aecsocket.demeter.core;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 import java.util.Collections;
 
 import com.github.aecsocket.demeter.core.config.ClimateConfig;
@@ -45,6 +43,9 @@ public class EngineTest {
                 new ClimateConfig.Noise(
                     0.1, 1000, 1, 0, 0
                 ),
+                new ClimateConfig.Noise(
+                    0.1, 1000, 5, 5, 0.75
+                ),
                 new ClimateConfig.Factors(
                     0.2
                 ),
@@ -54,14 +55,12 @@ public class EngineTest {
         );
 
         for (double d = 0; d < 1; d += 0.01) {
-            logValue(d, 1, "%.2f", engine.state(d, Vector2.ZERO).temperature());
+            logValue(d, 1, "%.2f", engine.state(d, Vector2.ZERO).get().humidity());
         }
 
-        System.out.println();
-
         for (double d = 0; d < 100; d += 1) {
-            logValue(d, 100, "%.1f", engine.state(d, Vector2.ZERO).temperature());
-            logValue(d + 0.5, 100, "%.1f", engine.state(d + 0.5, Vector2.ZERO).temperature());
+            logValue(d, 100, "%.1f", engine.state(d, Vector2.ZERO).get().humidity());
+            logValue(d + 0.5, 100, "%.1f", engine.state(d + 0.5, Vector2.ZERO).get().humidity());
         }
     }
 }

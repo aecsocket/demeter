@@ -1,21 +1,23 @@
 [versions]
 
 minecommons = "1.4.0-SNAPSHOT"
+bStats = "2.2.1"
+cloud = "1.5.0"
+protocolLib = "4.8.0-SNAPSHOT"
 junit = "5.7.2"
 
-# Paper
 paper = "1.18.1-R0.1-SNAPSHOT"
-paperBStats = "2.2.1"
-paperProtocolLib = "4.8.0-SNAPSHOT"
 
 [libraries]
 
 minecommons = { group = "com.github.aecsocket", name = "minecommons-core", version.ref = "minecommons" }
 
 paper = { group = "io.papermc.paper", name = "paper-api", version.ref = "paper" }
-paperBStats = { group = "org.bstats", name = "bstats-bukkit", version.ref = "paperBStats" }
+paperBStats = { group = "org.bstats", name = "bstats-bukkit", version.ref = "bStats" }
 paperMinecommons = { group = "com.github.aecsocket", name = "minecommons-paper", version.ref = "minecommons" }
-paperProtocolLib = { group = "com.comphenix.protocol", name = "ProtocolLib", version.ref = "paperProtocolLib" }
+paperCloud = { group = "cloud.commandframework", name = "cloud-paper", version.ref = "cloud" }
+paperCloudExtras = { group = "cloud.commandframework", name = "cloud-minecraft-extras", version.ref = "cloud" }
+paperProtocolLib = { group = "com.comphenix.protocol", name = "ProtocolLib", version.ref = "protocolLib" }
 
 jupiterApi = { group = "org.junit.jupiter", name = "junit-jupiter-api", version.ref = "junit" }
 jupiterEngine = { group = "org.junit.jupiter", name = "junit-jupiter-engine", version.ref = "junit" }
@@ -24,3 +26,4 @@ jupiterEngine = { group = "org.junit.jupiter", name = "junit-jupiter-engine", ve
 
 junit = [ "jupiterApi", "jupiterEngine" ]
 paperMinecommons = [ "minecommons", "paperMinecommons" ]
+paperCloud = [ "paperCloud", "paperCloudExtras" ]

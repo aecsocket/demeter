@@ -69,7 +69,7 @@ public final class PerlinNoise {
     }
 
     // [-1, 1]
-    public double get(double x, double y, double z, int octaves, double frequency, double amplitude) {
+    public double get(double x, double y, double z, int octaves, double lacunarity, double persistence) {
         double result = 0;
         double amp = 1;
         double freq = 1;
@@ -78,8 +78,8 @@ public final class PerlinNoise {
         for (int i = 0; i < octaves; i++) {
             result += get(x * freq, y * freq, z * freq) * amp;
             max += amp;
-            freq *= frequency;
-            amp *= amplitude;
+            freq *= lacunarity;
+            amp *= persistence;
         }
 
         return result / max;

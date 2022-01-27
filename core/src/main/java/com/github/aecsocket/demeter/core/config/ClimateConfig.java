@@ -8,7 +8,8 @@ import org.spongepowered.configurate.objectmapping.meta.Required;
 public record ClimateConfig(
     @Nullable Long seed,
     boolean useWorldSeed,
-    Noise noise,
+    Noise temperatureNoise,
+    Noise humidityNoise,
     Factors factors,
     @Required Map<String, Season> seasons
 ) {
@@ -16,8 +17,8 @@ public record ClimateConfig(
         double timeFactor,
         double scale,
         int octaves,
-        double frequency,
-        double amplitude
+        double lacunarity,
+        double persistence
     ) {}
 
     public record Factors(
