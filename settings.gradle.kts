@@ -35,6 +35,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "demeter"
 
+subproject("${rootProject.name}-core") {
+    projectDir = file("core")
+}
 subproject("${rootProject.name}-paper") {
     projectDir = file("paper")
 }
