@@ -1,3 +1,6 @@
+com.github.aecsocket.demeter.core
+com.github.aecsocket.demeter.core.config
+com.github.aecsocket.demeter.core.factor
 com.github.aecsocket.demeter.paper
 com.github.aecsocket.demeter.paper.feature
 com.github.aecsocket.demeter.paper.util
